@@ -195,21 +195,17 @@ fun AccountScreen(
                             onClick = onSave,
                             enabled = !ui.busy,
                             modifier = Modifier.weight(1f)
-                        ) { Text("Add account") }
+                        ) { Text("Check and save") }
                         OutlinedButton(
                             onClick = onSaveAsDestination,
                             enabled = !ui.busy,
                             modifier = Modifier.weight(1f)
-                        ) { Text("Add as destination") }
+                        ) { Text("Save as destination") }
                     }
-                    if (ui.busy) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Text(
-                            "Resolving IFSC on the live resolver...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.fillMaxWidth()) {
+                        Text("Pick a bank and fill the IFSC prefix")
                     }
+                    if (ui.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     ui.error?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
@@ -219,51 +215,42 @@ fun AccountScreen(
                 }
             }
 
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionTitle("Registry")
-                    StatusPill("${accounts.size} saved")
-                }
-            }
+            item { SectionTitle("Saved accounts (${accounts.size})") }
 
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Person,
                         title = "No accounts yet",
-                        subtitle = "Add the account you want to harvest from, and one destination to collect into."
+                        subtitle = "Add the source accounts you want to pull a single paisa from."
                     )
                 }
             } else {
-                items(accounts) { account ->
+                items(accounts, key = { it.id }) { account ->
                     GhostCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SectionTitle(account.holderLabel)
-                            StatusPill(
-                                if (account.isDestination) "destination" else account.bankCode,
-                                if (account.isDestination) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.secondary
+                            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "  ${account.bankName}",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f)
                             )
+                            if (account.isDestination) {
+                                StatusPill("destination")
+                            }
+                            IconButton(onClick = { onSetDestination(account.id) }) {
+                                Icon(
+                                    imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = "Make destination"
+                                )
+                            }
+                            IconButton(onClick = { onDelete(account.id) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            }
                         }
                         KeyValue("Account", maskAccount(account.accountNumber))
                         KeyValue("IFSC", account.ifsc)
-                        KeyValue("Bank", account.bankName)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { onSetDestination(account.id) },
-                                enabled = !account.isDestination
-                            ) {
-                                Icon(
-                                    if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                    contentDescription = null
-                                )
-                                Text(" Make destination")
-                            }
-                            OutlinedButton(onClick = { onDelete(account.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete")
-                                Text(" Remove")
-                            }
-                        }
+                        KeyValue("Label", account.holderLabel)
                     }
                 }
             }

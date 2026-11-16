@@ -1,7 +1,6 @@
 package com.aibuilt.ghostbank.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,16 +11,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,7 +25,6 @@ import com.aibuilt.ghostbank.model.StealthLevel
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
-import com.aibuilt.ghostbank.ui.components.MonoBlock
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.ToggleRow
@@ -47,16 +40,13 @@ fun StealthRoute(
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val settings by vm.settings.collectAsStateWithLifecycle()
     val canary by vm.canary.collectAsStateWithLifecycle()
-    val leak by vm.leak.collectAsStateWithLifecycle()
-    var proxyText by remember { mutableStateOf("") }
-
-    LaunchedEffect(settings.proxyPool) {
-        proxyText = settings.proxyPool.joinToString("\n") { it.raw }
-    }
 
     Scaffold(topBar = { GhostTopBar(title = "Stealth") }) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
@@ -64,20 +54,21 @@ fun StealthRoute(
                 GhostCard {
                     SectionTitle("Stealth level")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        vm.levels.forEach { level ->
+                        StealthLevel.entries.forEach { level ->
                             FilterChip(
                                 selected = settings.stealthLevel == level,
                                 onClick = { vm.setLevel(level) },
-                                label = { Text(level.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                label = { Text(level.name) }
                             )
                         }
                     }
                     Text(
-                        if (settings.stealthLevel == StealthLevel.GHOST)
-                            "Ghost is proxy-mandatory: no exit means no traffic at all."
-                        else
-                            "Deep is the recommended default. Standard trades stealth for speed.",
-                        style = MaterialTheme.typography.bodySmall,
+                        when (settings.stealthLevel) {
+                            StealthLevel.STANDARD -> "Standard: proxy optional, one identity per account, jitter on."
+                            StealthLevel.DEEP -> "Deep: proxy pool rotated, decoy browsing, ghost idle, padding."
+                            StealthLevel.GHOST -> "Ghost: proxy mandatory, geo-matched exit, canary gate, full entropy budget."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -85,100 +76,68 @@ fun StealthRoute(
 
             item {
                 GhostCard {
-                    SectionTitle("Exit")
-                    ToggleRow(
-                        title = "Tor mode",
-                        subtitle = "Route through Orbot on 127.0.0.1:9050",
-                        checked = settings.torMode,
-                        onChange = vm::setTor
-                    )
-                    OutlinedTextField(
-                        value = proxyText,
-                        onValueChange = { proxyText = it },
-                        label = { Text("Proxy pool, one per line (http:// or socks5://)") },
-                        minLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            vm.saveProxies(proxyText.split("\n").map { it.trim() }.filter { it.isNotEmpty() })
-                        }) { Text("Save pool") }
-                        OutlinedButton(onClick = onOpenLeak) { Text("Leak check") }
-                    }
-                    StatusPill(
-                        if (settings.exitConfigured) "exit configured" else "no exit: kill-switch holds traffic",
-                        if (settings.exitConfigured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Transport and cover")
+                    SectionTitle("Transport")
+                    ToggleRow("Tor mode", "Send everything through Orbot on 127.0.0.1:9050", settings.torMode, vm::setTor)
                     ToggleRow("DNS-over-HTTPS", "Resolve names inside the tunnel", settings.dohEnabled, vm::setDoh)
                     ToggleRow("Kill-switch", "Never send on the raw IP", settings.killSwitch, vm::setKillSwitch)
-                    ToggleRow("Geo-matched exit", "Re-pick an exit whose country fits the bank", settings.geoMatch, vm::setGeo)
-                    ToggleRow("Padding", "Randomised header and body padding", settings.padding, vm::setPadding)
-                    ToggleRow("Decoy browsing", "Real GETs on an unrelated bank first", settings.decoyBrowsing, vm::setDecoy)
-                    ToggleRow("Ghost idle", "Keep-alive junks after settling", settings.ghostIdle, vm::setGhostIdle)
+                    ToggleRow("Geo-matched exit", "Re-pick an exit whose country fits", settings.geoMatch, vm::setGeo)
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Timing")
-                    ToggleRow("Diurnal window", "Slow down at night", settings.diurnalWindow, vm::setDiurnal)
-                    KeyValue("Window", "${settings.windowStartHour}:00 - ${settings.windowEndHour}:00")
-                    ToggleRow("Amount fragmentation", "Split across accounts and minutes", settings.fragmentation, vm::setFragmentation)
-                    ToggleRow("Exact one paisa", "Hard cap the harvest at 1 paisa", settings.exactOnePaisa, vm::setExactPaisa)
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Canary")
-                    Text(
-                        "An innocuous homepage GET first. Blocked means the run never starts.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionTitle("Timing and velocity")
+                    ToggleRow("Diurnal window", "Slower at night, faster in banking hours", settings.diurnalWindow, vm::setDiurnal)
+                    KeyValue("Window", "${settings.windowStartHour}:00 to ${settings.windowEndHour}:00")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = vm::runCanary, enabled = !canary.running) { Text("Run canary") }
-                        OutlinedButton(onClick = vm::score) { Text("Score the setup") }
+                        OutlinedButton(onClick = { vm.setWindow((settings.windowStartHour - 1).coerceIn(0, 23), settings.windowEndHour) }) { Text("Start -1h") }
+                        OutlinedButton(onClick = { vm.setWindow((settings.windowStartHour + 1).coerceIn(0, 23), settings.windowEndHour) }) { Text("Start +1h") }
+                        OutlinedButton(onClick = { vm.setWindow(settings.windowStartHour, (settings.windowEndHour - 1).coerceIn(1, 23)) }) { Text("End -1h") }
+                        OutlinedButton(onClick = { vm.setWindow(settings.windowStartHour, (settings.windowEndHour + 1).coerceIn(1, 24)) }) { Text("End +1h") }
                     }
+                    KeyValue("Max requests / minute", settings.maxRequestsPerMinute.toString())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.setCaps(settings.maxRequestsPerMinute - 10, settings.maxAccountsPerHour) }) { Text("-10 rpm") }
+                        OutlinedButton(onClick = { vm.setCaps(settings.maxRequestsPerMinute + 10, settings.maxAccountsPerHour) }) { Text("+10 rpm") }
+                    }
+                    KeyValue("Max accounts / hour", settings.maxAccountsPerHour.toString())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.setCaps(settings.maxRequestsPerMinute, settings.maxAccountsPerHour - 5) }) { Text("-5 aph") }
+                        OutlinedButton(onClick = { vm.setCaps(settings.maxRequestsPerMinute, settings.maxAccountsPerHour + 5) }) { Text("+5 aph") }
+                    }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Cover traffic and shape")
+                    ToggleRow("Decoy browsing", "Load an unrelated bank first", settings.decoyBrowsing, vm::setDecoy)
+                    ToggleRow("Ghost idle keep-alives", "Idle pings after a settle", settings.ghostIdle, vm::setGhostIdle)
+                    ToggleRow("Amount fragmentation", "Split bigger pulls across legs", settings.fragmentation, vm::setFragmentation)
+                    ToggleRow("Padding", "Randomised body and header padding", settings.padding, vm::setPadding)
+                    ToggleRow("Canary gate", "Innocuous GET before any run", settings.canaryEnabled, vm::setCanary)
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Canary and audit")
+                    Button(onClick = vm::runCanary, enabled = !canary.running) { Text("Run canary probe") }
                     canary.outcome?.let { outcome ->
                         StatusPill(
                             if (outcome.alive) "ALIVE" else "DEAD",
                             if (outcome.alive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
-                        MonoBlock(outcome.detail, maxHeight = 120)
+                        Text(outcome.detail, style = MaterialTheme.typography.bodySmall)
                     }
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Stealth score")
-                    val report = leak.report
-                    if (report == null) {
-                        Text(
-                            "Nothing scored yet.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        KeyValue("Score", "${report.score}/100")
-                        MonoBlock(report.reasons.joinToString("\n"), maxHeight = 200)
-                    }
-                    OutlinedButton(onClick = onOpenTrace, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open trace audit")
-                    }
+                    TextButton(onClick = onOpenLeak) { Text("Open Leak lab") }
+                    TextButton(onClick = onOpenTrace) { Text("Open Trace audit") }
                 }
             }
 
             item {
                 Text(
-                    "No telemetry, no analytics SDK, no custom app header. Everything stays on device.",
+                    "Honest limit: the TCP/IP stack fingerprint is Android's own. Only a proxy or Tor can shadow it - that is why Ghost level refuses to send without an exit.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

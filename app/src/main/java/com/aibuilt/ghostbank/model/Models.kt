@@ -3,6 +3,7 @@ package com.aibuilt.ghostbank.model
 import kotlinx.serialization.Serializable
 
 /** Confidence that an endpoint URL actually exists on the live internet. */
+@Serializable
 enum class EndpointState { VERIFIED, UNVERIFIED }
 
 /** One HTTP route belonging to a bank, with the probe verdict that backs it. */

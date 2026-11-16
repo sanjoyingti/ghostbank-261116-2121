@@ -6,6 +6,7 @@ import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.data.db.AccountEntity
 import com.aibuilt.ghostbank.data.db.HarvestEntity
 import com.aibuilt.ghostbank.engine.RunState
+import com.aibuilt.ghostbank.model.HarvestState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,8 @@ data class HarvestUi(
     val accounts: List<AccountEntity> = emptyList(),
     val harvests: List<HarvestEntity> = emptyList(),
     val selected: Set<Long> = emptySet(),
+    val amountPaise: Long = 1L,
+    val sourceId: Long? = null,
     val toast: String? = null
 )
 
@@ -26,6 +29,9 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
     val ui: StateFlow<HarvestUi> = _ui.asStateFlow()
 
     val run: StateFlow<RunState> = container.harvestEngine.state
+
+    val destination: StateFlow<AccountEntity?> = container.accountDao.observeDestination()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
         viewModelScope.launch {
@@ -48,7 +54,7 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
 
     fun selectAllUnharvested() {
         val harvested = _ui.value.harvests
-            .filter { it.state.name in setOf("SETTLED", "FLOOR", "HARVESTED") }
+            .filter { it.state == HarvestState.SETTLED || it.state == HarvestState.FLOOR || it.state == HarvestState.HARVESTED }
             .map { it.accountId }
             .toSet()
         _ui.value = _ui.value.copy(
@@ -60,15 +66,32 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
         _ui.value = _ui.value.copy(selected = emptySet())
     }
 
+    fun setAmountPaise(value: Long) {
+        _ui.value = _ui.value.copy(amountPaise = value.coerceIn(1L, 2_500_000L))
+    }
+
+    fun setSource(id: Long) {
+        _ui.value = _ui.value.copy(sourceId = id)
+    }
+
     fun start() {
         val ids = _ui.value.selected.toList()
         if (ids.isEmpty()) {
             _ui.value = _ui.value.copy(toast = "Select at least one account")
             return
         }
-        viewModelScope.launch {
-            container.harvestEngine.harvest(ids)
+        val amount = _ui.value.amountPaise
+        viewModelScope.launch { container.harvestEngine.harvest(ids, amount) }
+    }
+
+    fun startSingle() {
+        val source = _ui.value.sourceId ?: _ui.value.accounts.firstOrNull()?.id
+        if (source == null) {
+            _ui.value = _ui.value.copy(toast = "Add an account first")
+            return
         }
+        val amount = _ui.value.amountPaise
+        viewModelScope.launch { container.harvestEngine.harvest(listOf(source), amount) }
     }
 
     fun startWith(ids: List<Long>, amountPaise: Long) {
@@ -91,8 +114,8 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.harvestDao.clearAll() }
     }
 
-    fun stateOf(accountId: Long): String? =
-        _ui.value.harvests.firstOrNull { it.accountId == accountId }?.state?.name
+    fun stateOf(accountId: Long): HarvestState? =
+        _ui.value.harvests.firstOrNull { it.accountId == accountId }?.state
 
     val totals: StateFlow<Long> = container.harvestDao.observeTotalPaise()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)

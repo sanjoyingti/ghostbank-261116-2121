@@ -11,10 +11,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,32 +50,42 @@ fun LedgerRoute(container: AppContainer) {
     val credited by vm.creditedPaise.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
+    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.getDefault())
 
-    Scaffold(topBar = { GhostTopBar(title = "Ledger") }) { padding ->
+    Scaffold(
+        topBar = {
+            GhostTopBar(title = "Ledger", actions = {
+                IconButton(onClick = {
+                    scope.launch {
+                        val intent = vm.export(context)
+                        if (intent != null) {
+                            context.startActivity(
+                                Intent.createChooser(intent, "Export ledger").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                }) {
+                    Icon(Icons.Default.Share, contentDescription = "Export CSV")
+                }
+            })
+        }
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Credited into the destination")
-                    KeyValue("Total", "${paiseLabel(credited)} ($credited paise)", MaterialTheme.colorScheme.primary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    val intent = vm.export(context)
-                                    if (intent != null) {
-                                        context.startActivity(Intent.createChooser(intent, "Export ledger"))
-                                    }
-                                }
-                            },
-                            enabled = rows.isNotEmpty()
-                        ) { Text("Export CSV") }
-                        OutlinedButton(onClick = vm::clear, enabled = rows.isNotEmpty()) { Text("Clear") }
-                    }
+                    SectionTitle("Credited to destination")
+                    Text(
+                        "$credited paise (${paiseLabel(credited)}) across ${rows.count { it.direction == LedgerDirection.CREDIT }} credit rows",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    TextButton(onClick = vm::clear) { Text("Clear ledger") }
                 }
             }
 
@@ -80,26 +93,33 @@ fun LedgerRoute(container: AppContainer) {
                 item {
                     EmptyState(
                         icon = Icons.Default.ReceiptLong,
-                        title = "No bookings yet",
-                        subtitle = "Only a confirmed UTR lands here - nothing is faked."
+                        title = "Nothing booked yet",
+                        subtitle = "Rows appear only after a debit confirms and a UTR is captured."
                     )
                 }
             } else {
-                items(rows) { row ->
+                items(rows, key = { it.id }) { row ->
                     GhostCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SectionTitle(if (row.direction == LedgerDirection.DEBIT) "Debit" else "Credit")
+                            Text(
+                                fmt.format(Date(row.bookedAt)),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
                             StatusPill(
-                                if (row.direction == LedgerDirection.DEBIT) "out" else "in",
-                                if (row.direction == LedgerDirection.CREDIT) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.secondary
+                                text = row.direction.name,
+                                color = if (row.direction == LedgerDirection.CREDIT) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                }
                             )
                         }
-                        KeyValue("Amount", "${paiseLabel(row.amountPaise)} (${row.amountPaise} paise)")
                         KeyValue("Bank", row.bankName)
-                        KeyValue("UTR", row.utr ?: "-")
-                        KeyValue("When", fmt.format(Date(row.bookedAt)))
-                        Text(row.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        KeyValue("Amount", "${row.amountPaise} paise")
+                        row.utr?.let { KeyValue("UTR", it) }
+                        KeyValue("Note", row.note)
                     }
                 }
             }
