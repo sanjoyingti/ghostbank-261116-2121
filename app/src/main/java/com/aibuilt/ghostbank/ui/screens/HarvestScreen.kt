@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -34,7 +33,6 @@ import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.MonoBlock
 import com.aibuilt.ghostbank.ui.components.SectionTitle
-import com.aibuilt.ghostbank.ui.components.StageTimeline
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
@@ -51,7 +49,7 @@ fun HarvestRoute(container: AppContainer, onOpenTransfer: () -> Unit) {
         if (ui.toast != null) vm.clearToast()
     }
 
-    Scaffold(topBar = { GhostTopBar(title = "Harvest") }) { padding ->
+    Scaffold(topBar = { GhostTopBar(title = "Harvest", actions = {}) }) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -62,124 +60,78 @@ fun HarvestRoute(container: AppContainer, onOpenTransfer: () -> Unit) {
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Micro ledger")
-                    KeyValue("Total harvested", paiseLabel(total))
-                    KeyValue("Accounts in registry", ui.accounts.size.toString())
+                    SectionTitle("One paisa per account, once")
+                    KeyValue("Harvested total", paiseLabel(total))
+                    KeyValue("Selected", ui.selected.size.toString())
                     Text(
-                        "One paisa per account, once ever. The dedupe registry is written before the request leaves.",
+                        "The dedupe registry is written before the request leaves, so no account is harvested twice.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = vm::selectAllUnharvested, modifier = Modifier.weight(1f)) {
-                        Text("Select new")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = vm::start, enabled = !run.active) { Text("Harvest selected") }
+                        OutlinedButton(onClick = vm::selectAllUnharvested, enabled = !run.active) {
+                            Text("Select unharvested")
+                        }
+                        OutlinedButton(onClick = vm::clearSelection) { Text("Clear") }
                     }
-                    OutlinedButton(onClick = vm::clearSelection, modifier = Modifier.weight(1f)) {
-                        Text("Clear")
+                    OutlinedButton(onClick = onOpenTransfer, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open pipeline view")
                     }
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = vm::start,
-                        enabled = !run.active,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Run 1 paisa (${ui.selected.size})") }
-                    OutlinedButton(
-                        onClick = vm::stop,
-                        enabled = run.active,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Stop") }
-                }
-            }
-
-            if (run.active) {
-                item {
-                    Column {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    if (run.active) {
                         Text(
-                            "leg ${run.completedLegs}/${run.totalLegs} - ${run.current.name}",
-                            style = MaterialTheme.typography.bodyMedium
+                            "Running: stage ${run.current.name.replace('_', ' ')}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        MonoBlock(
+                            text = run.rawTail.takeLast(12).joinToString("\n"),
+                            maxHeight = 160
                         )
                     }
                 }
             }
-
-            if (run.ticks.isNotEmpty()) {
-                item {
-                    GhostCard {
-                        SectionTitle("Pipeline")
-                        StageTimeline(run.ticks)
-                        StatusPill(
-                            "failures ${run.failedLegs}",
-                            if (run.failedLegs == 0) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-
-            if (run.rawTail.isNotEmpty()) {
-                item {
-                    GhostCard {
-                        SectionTitle("Raw log")
-                        MonoBlock(run.rawTail.joinToString("\n"))
-                    }
-                }
-            }
-
-            item { SectionTitle("Accounts") }
 
             if (ui.accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Download,
-                        title = "Nothing to harvest",
-                        subtitle = "Add an account on the Account screen first."
+                        title = "No accounts to harvest",
+                        subtitle = "Add accounts on the Account screen first."
                     )
                 }
             }
 
             items(ui.accounts, key = { it.id }) { account ->
-                val state = ui.harvests.firstOrNull { it.accountId == account.id }?.state?.name
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
-                            checked = ui.selected.contains(account.id),
+                            checked = account.id in ui.selected,
                             onCheckedChange = { vm.toggle(account.id) }
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${account.accountNumber.takeLast(4)} - ${account.bankName}",
-                                style = MaterialTheme.typography.bodySmall,
+                                account.accountNumber,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace
                             )
-                        }
-                        if (state != null) {
-                            StatusPill(
-                                state,
-                                when (state) {
-                                    "HARVESTED", "SETTLED" -> MaterialTheme.colorScheme.primary
-                                    "FLOOR" -> MaterialTheme.colorScheme.tertiary
-                                    "REJECTED" -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.outline
-                                }
+                            Text(
+                                "${account.bankName} - ${account.ifsc}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        val state = vm.stateOf(account.id)
+                        val color = when (state) {
+                            "SETTLED", "HARVESTED" -> MaterialTheme.colorScheme.primary
+                            "FLOOR" -> MaterialTheme.colorScheme.tertiary
+                            "REJECTED" -> MaterialTheme.colorScheme.error
+                            "SENT" -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.outline
+                        }
+                        StatusPill(state ?: "PENDING", color)
                     }
-                }
-            }
-
-            item {
-                OutlinedButton(onClick = onOpenTransfer, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open free-amount transfer")
                 }
             }
         }

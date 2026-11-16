@@ -4,11 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -223,7 +221,7 @@ fun AccountScreen(
                     EmptyState(
                         icon = Icons.Default.AccountBalance,
                         title = "No accounts yet",
-                        subtitle = "Add a source account above, or pick a bank to jump to its IFSC prefix."
+                        subtitle = "Add one above, or open the bank picker to prefill its IFSC prefix."
                     )
                 }
             }
@@ -232,30 +230,32 @@ fun AccountScreen(
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                account.accountNumber,
-                                style = MaterialTheme.typography.bodySmall,
+                                text = account.holderLabel,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = account.accountNumber,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                "${account.ifsc} - ${account.bankName}",
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "${account.bankName} - ${account.ifsc}",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (account.isDestination) {
-                                Spacer(Modifier.width(6.dp))
                                 StatusPill("destination", MaterialTheme.colorScheme.primary)
                             }
                         }
                         IconButton(onClick = { onSetDestination(account.id) }) {
                             Icon(
                                 imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Use as destination"
+                                contentDescription = "Mark as destination"
                             )
                         }
                         IconButton(onClick = { onDelete(account.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            Icon(Icons.Default.Delete, contentDescription = "Delete account")
                         }
                     }
                 }
