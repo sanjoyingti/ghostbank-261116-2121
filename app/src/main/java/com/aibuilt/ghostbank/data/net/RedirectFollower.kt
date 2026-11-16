@@ -2,13 +2,11 @@ package com.aibuilt.ghostbank.data.net
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import java.io.IOException
 
 /**
- * Fix 3: Android's OkHttp will follow redirects on its own, but we need the hop count
- * and the final URL for the log, and we must keep the method and headers across hops.
- * OkHttp only replays headers on same-host redirects, so this follower walks hops manually.
+ * Manual redirect walker: follows up to maxHops, keeps the method and the original headers on
+ * every hop, and hands back the final URL plus the hop count so the log is honest.
  */
 class RedirectFollower(private val maxHops: Int = 5) {
 
@@ -23,53 +21,44 @@ class RedirectFollower(private val maxHops: Int = 5) {
 
     private val hopCodes = setOf(301, 302, 303, 307, 308)
 
-    fun follow(client: OkHttpClient, request: Request): Walk {
+    fun follow(client: OkHttpClient, original: Request): Walk {
         var hops = 0
-        var current = request
-        var response: Response? = null
-        try {
-            while (true) {
-                val call = client.newCall(current)
-                response?.close()
-                val r = call.execute()
-                response = r
-                val location = r.header("Location")
-                val code = r.code
-                if (code in hopCodes && location != null && hops < maxHops) {
-                    val next = if (location.startsWith("http")) {
+        var current = original
+        while (true) {
+            client.newCall(current).execute().use { response ->
+                val code = response.code
+                val location = response.header("Location")
+                if (code in hopCodes && !location.isNullOrBlank() && hops < maxHops) {
+                    val nextUrl = if (location.startsWith("http")) {
                         location
                     } else {
                         current.url.resolve(location)?.toString() ?: location
                     }
-                    // Preserve method and all original headers on every hop.
-                    var builder = Request.Builder()
-                        .url(next)
-                    request.headers.forEach { (name, value) -> builder = builder.addHeader(name, value) }
-                    val body = current.body
-                    if (body != null && code != 303) {
-                        builder = builder.method(current.method, body)
-                    } else if (body != null) {
-                        builder = builder.method("GET", null)
-                    } else {
-                        builder = builder.method(current.method, null)
-                    }
-                    current = builder.build()
                     hops++
-                    continue
+                    current = nextHop(original, current, nextUrl, code)
+                } else {
+                    return Walk(
+                        status = code,
+                        body = response.body?.string().orEmpty(),
+                        hops = hops,
+                        finalUrl = current.url.toString(),
+                        contentType = response.header("Content-Type"),
+                        headers = response.headers.toString()
+                    )
                 }
-
-                val text = r.body?.string().orEmpty()
-                return Walk(
-                    status = code,
-                    body = text,
-                    hops = hops,
-                    finalUrl = current.url.toString(),
-                    contentType = r.header("Content-Type"),
-                    headers = r.headers.toString()
-                )
             }
-        } finally {
-            response?.close()
+        }
+    }
+
+    /** Keeps the original method and every original header across the hop. */
+    private fun nextHop(original: Request, current: Request, url: String, status: Int): Request {
+        val builder = Request.Builder().url(url)
+        original.headers.forEach { (name, value) -> builder.addHeader(name, value) }
+        val body = current.body
+        return when {
+            body != null && status != 303 -> builder.method(current.method, body).build()
+            body != null -> builder.method("GET", null).build()
+            else -> builder.method(current.method, null).build()
         }
     }
 
@@ -78,8 +67,8 @@ class RedirectFollower(private val maxHops: Int = 5) {
 
     @Throws(IOException::class)
     fun ping(client: OkHttpClient, url: String, headers: Map<String, String>): Walk {
-        var builder = Request.Builder().url(url).get()
-        headers.forEach { (k, v) -> builder = builder.addHeader(k, v) }
+        val builder = Request.Builder().url(url).get()
+        headers.forEach { (k, v) -> builder.addHeader(k, v) }
         return follow(client, builder.build())
     }
 }

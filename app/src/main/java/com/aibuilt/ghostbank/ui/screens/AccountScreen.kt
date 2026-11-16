@@ -2,6 +2,7 @@ package com.aibuilt.ghostbank.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +85,6 @@ fun AccountRoute(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(
     ui: AccountUi,
@@ -123,7 +122,8 @@ fun AccountScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             if (!settings.exitConfigured && settings.killSwitch) {
                 item {
@@ -213,80 +213,41 @@ fun AccountScreen(
                 }
             }
 
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionTitle("Registry (${accounts.size})", modifier = Modifier.weight(1f))
-                    TextButton(onClick = onOpenBanks) { Text("Pick a bank") }
-                }
-            }
+            item { SectionTitle("Registry (${accounts.size})") }
 
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.AccountBalance,
-                        title = "No accounts saved",
-                        subtitle = "Each saved account is fingerprinted once and may only be harvested once"
-                    )
-                }
-            } else {
-                items(accounts, key = { it.id }) { account ->
-                    AccountRow(
-                        account = account,
-                        isDestination = destination?.id == account.id,
-                        onSetDestination = { onSetDestination(account.id) },
-                        onDelete = { onDelete(account.id) }
+                        title = "No accounts yet",
+                        subtitle = "Add a source account above, or pick a bank to jump to its IFSC prefix."
                     )
                 }
             }
 
-            item {
+            items(accounts, key = { it.id }) { account ->
                 GhostCard {
-                    SectionTitle("The rule")
-                    Text(
-                        "One paisa per account, once. The registry is written before a request leaves, so an account can never be harvested twice.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${account.bankName} - ${account.accountNumber} - ${account.ifsc}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (account.isDestination) {
+                            StatusPill("destination", MaterialTheme.colorScheme.primary)
+                        } else {
+                            IconButton(onClick = { onSetDestination(account.id) }) {
+                                Icon(Icons.Default.StarBorder, contentDescription = "Make destination")
+                            }
+                        }
+                        IconButton(onClick = { onDelete(account.id) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        }
+                    }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccountRow(
-    account: AccountEntity,
-    isDestination: Boolean,
-    onSetDestination: () -> Unit,
-    onDelete: () -> Unit
-) {
-    GhostCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "${account.accountNumber}  -  ${account.ifsc}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    account.bankName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (isDestination) {
-                StatusPill("destination", MaterialTheme.colorScheme.primary)
-            }
-            IconButton(onClick = onSetDestination) {
-                Icon(
-                    if (isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                    contentDescription = "Set as destination",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove account")
             }
         }
     }

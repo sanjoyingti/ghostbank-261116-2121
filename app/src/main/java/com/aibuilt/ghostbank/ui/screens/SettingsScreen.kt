@@ -2,22 +2,21 @@ package com.aibuilt.ghostbank.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
+import com.aibuilt.ghostbank.data.settings.GhostSettings
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
@@ -40,28 +40,48 @@ import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
 fun SettingsRoute(container: AppContainer, onOpenTrace: () -> Unit) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val proxyText by vm.proxyText.collectAsStateWithLifecycle()
 
     SettingsScreen(
-        vm = vm,
-        proxyPool = settings.proxyPool.map { it.raw },
-        torMode = settings.torMode,
-        killSwitch = settings.killSwitch,
-        exactPaisa = settings.exactOnePaisa,
+        settings = settings,
+        proxyText = proxyText,
+        onProxyText = vm::loadProxies,
+        onSaveProxies = vm::saveProxies,
+        onTor = vm::setTor,
+        onDoh = vm::setDoh,
+        onKillSwitch = vm::setKillSwitch,
+        onExactPaisa = vm::setExactPaisa,
+        onFragmentation = vm::setFragmentation,
+        onCaps = vm::setCaps,
+        onWindow = vm::setWindow,
         onOpenTrace = onOpenTrace
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    vm: SettingsViewModel,
-    proxyPool: List<String>,
-    torMode: Boolean,
-    killSwitch: Boolean,
-    exactPaisa: Boolean,
+    settings: GhostSettings,
+    proxyText: String?,
+    onProxyText: (String) -> Unit,
+    onSaveProxies: (String) -> Unit,
+    onTor: (Boolean) -> Unit,
+    onDoh: (Boolean) -> Unit,
+    onKillSwitch: (Boolean) -> Unit,
+    onExactPaisa: (Boolean) -> Unit,
+    onFragmentation: (Boolean) -> Unit,
+    onCaps: (Int, Int) -> Unit,
+    onWindow: (Int, Int) -> Unit,
     onOpenTrace: () -> Unit
 ) {
-    var draft by remember(proxyPool) { mutableStateOf(proxyPool.joinToString("\n")) }
+    val draft = proxyText ?: remember(settings.proxyPool) {
+        settings.proxyPool.joinToString("\n") { it.raw }
+    }
+    var rpm by remember(settings.maxRequestsPerMinute) { mutableStateOf(settings.maxRequestsPerMinute.toString()) }
+    var aph by remember(settings.maxAccountsPerHour) { mutableStateOf(settings.maxAccountsPerHour.toString()) }
+    var start by remember(settings.windowStartHour) { mutableStateOf(settings.windowStartHour.toString()) }
+    var end by remember(settings.windowEndHour) { mutableStateOf(settings.windowEndHour.toString()) }
+
+    LaunchedEffect(Unit) { }
 
     Scaffold(topBar = { GhostTopBar(title = "Settings") }) { padding ->
         LazyColumn(
@@ -69,86 +89,117 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Exit pool")
+                    SectionTitle("Exit")
                     Text(
-                        "One entry per line: http://host:port or socks5://host:port. Requests rotate through the list and never repeat one while another is available.",
+                        "Proxy-mandatory when the dial says Ghost: no exit, no traffic. One entry per line, http://host:port or socks5://host:port.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = draft,
-                        onValueChange = { draft = it },
-                        label = { Text("Proxy entries") },
-                        minLines = 4,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        onValueChange = onProxyText,
+                        label = { Text("Proxy pool") },
+                        minLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Button(
-                        onClick = { vm.saveProxies(draft) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Save exits (${proxyPool.size} active)") }
-                    ToggleRow("Tor mode", "Use Orbot on 127.0.0.1:9050", torMode, vm::setTor)
-                    ToggleRow("Kill-switch", "Never send on the raw IP", killSwitch, vm::setKillSwitch)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onSaveProxies(draft) }) { Text("Save pool") }
+                        TextButton(onClick = { onSaveProxies("") }) { Text("Clear") }
+                    }
+                    KeyValue("Exits", settings.proxyPool.size.toString())
+                    ToggleRow("Tor mode", "SOCKS5 to Orbot on 127.0.0.1:9050", settings.torMode, onTor)
+                    ToggleRow("DNS over HTTPS", "Resolve inside the tunnel", settings.dohEnabled, onDoh)
+                    ToggleRow("Kill-switch", "Abandon the call instead of leaking the raw IP", settings.killSwitch, onKillSwitch)
                 }
             }
 
             item {
                 GhostCard {
                     SectionTitle("Amount")
-                    KeyValue("Harvest amount", if (exactPaisa) "exactly 1 paisa" else "rail default")
-                    KeyValue("Hard cap", "one leg per account, ever")
-                    ToggleRow("Exact one paisa", "Hard-cap the amount so it can never drift", exactPaisa, vm::setExactPaisa)
+                    ToggleRow("Exact 1 paisa", "Hard-capped at 0.01 rupee, never drifts", settings.exactOnePaisa, onExactPaisa)
+                    ToggleRow("Amount fragmentation", "Split legs across virtual accounts where possible", settings.fragmentation, onFragmentation)
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Local data")
-                    Text(
-                        "Nothing leaves the device: no analytics, no cloud, no telemetry SDK. The ledger and the raw log live in a private local database.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(onClick = onOpenTrace, modifier = Modifier.fillMaxWidth()) {
-                        androidx.compose.material3.Icon(Icons.Default.ReceiptLong, contentDescription = null)
-                        Text("  Open trace audit")
+                    SectionTitle("Velocity")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = rpm,
+                            onValueChange = { rpm = it.filter { c -> c.isDigit() }.take(3) },
+                            label = { Text("Requests / minute") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = aph,
+                            onValueChange = { aph = it.filter { c -> c.isDigit() }.take(3) },
+                            label = { Text("Accounts / hour") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    OutlinedButton(onClick = { vm.clearLogs() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Clear raw log")
+                    Button(
+                        onClick = {
+                            onCaps(rpm.toIntOrNull() ?: 60, aph.toIntOrNull() ?: 40)
+                        }
+                    ) { Text("Save caps") }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Diurnal window")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = start,
+                            onValueChange = { start = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("From hour") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = end,
+                            onValueChange = { end = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("To hour") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
+                    Button(
+                        onClick = {
+                            onWindow(
+                                (start.toIntOrNull() ?: 9).coerceIn(0, 23),
+                                (end.toIntOrNull() ?: 23).coerceIn(0, 23)
+                            )
+                        }
+                    ) { Text("Save window") }
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Registry rule")
+                    SectionTitle("Diagnostics")
                     Text(
-                        "An endpoint may only carry a debit leg if it is flagged VERIFIED with live probe evidence. Invented SBI routes stay probe-only until they answer.",
+                        "Nothing leaves the device: no telemetry, no analytics, no cloud ledger.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    androidx.compose.material3.Icon(
-                        Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    TextButton(onClick = onOpenTrace) { Text("Open trace audit") }
                 }
             }
 
-            item {
-                GhostCard {
-                    SectionTitle("About")
-                    Text(
-                        "GhostBank 1.4 - IMPS P2A micro-harvest, Trace-Shield stealth, on-device only.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            item { Column { Text("GhostBank - local only", style = MaterialTheme.typography.bodySmall) } }
         }
     }
 }
