@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -27,8 +26,6 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
     val ui: StateFlow<HarvestUi> = _ui.asStateFlow()
 
     val run: StateFlow<RunState> = container.harvestEngine.state
-
-    val pool = container.settingsStore.settings
 
     init {
         viewModelScope.launch {
@@ -74,6 +71,16 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun startWith(ids: List<Long>, amountPaise: Long) {
+        if (ids.isEmpty()) {
+            _ui.value = _ui.value.copy(toast = "Pick a source account first")
+            return
+        }
+        viewModelScope.launch {
+            container.harvestEngine.harvest(ids, amountPaise.coerceAtLeast(1L))
+        }
+    }
+
     fun stop() = container.harvestEngine.stop()
 
     fun clearToast() {
@@ -84,9 +91,9 @@ class HarvestViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.harvestDao.clearAll() }
     }
 
+    fun stateOf(accountId: Long): String? =
+        _ui.value.harvests.firstOrNull { it.accountId == accountId }?.state?.name
+
     val totals: StateFlow<Long> = container.harvestDao.observeTotalPaise()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-
-    val combined = combine(_ui, run) { ui, r -> ui to r }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HarvestUi() to RunState(""))
 }

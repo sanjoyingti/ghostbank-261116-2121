@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.db.LedgerEntity
 import com.aibuilt.ghostbank.model.LedgerDirection
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
@@ -39,6 +36,7 @@ import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
+import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.LedgerViewModel
 import kotlinx.coroutines.launch
@@ -54,36 +52,17 @@ fun LedgerRoute(container: AppContainer) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    LedgerScreen(
-        rows = rows,
-        creditedPaise = credited,
-        onExport = {
-            scope.launch {
-                vm.export(context)?.let { intent ->
-                    context.startActivity(Intent.createChooser(intent, "Export ledger"))
-                }
-            }
-        },
-        onClear = vm::clear
-    )
-}
-
-@Composable
-fun LedgerScreen(
-    rows: List<LedgerEntity>,
-    creditedPaise: Long,
-    onExport: () -> Unit,
-    onClear: () -> Unit
-) {
-    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.US)
-
     Scaffold(
         topBar = {
             GhostTopBar(title = "Ledger", actions = {
-                IconButton(onClick = onExport, enabled = rows.isNotEmpty()) {
-                    Icon(Icons.Default.Share, contentDescription = "Export")
-                }
-                IconButton(onClick = onClear, enabled = rows.isNotEmpty()) {
+                IconButton(onClick = {
+                    scope.launch {
+                        vm.export(context)?.let { intent ->
+                            context.startActivity(Intent.createChooser(intent, "Export ledger"))
+                        }
+                    }
+                }) { Icon(Icons.Default.Share, contentDescription = "Export") }
+                IconButton(onClick = { vm.clear() }) {
                     Icon(Icons.Default.Delete, contentDescription = "Clear")
                 }
             })
@@ -94,16 +73,16 @@ fun LedgerScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Exact paise")
-                    KeyValue("Credited", "$creditedPaise paise")
-                    KeyValue("Rows", "${rows.size}")
+                    SectionTitle("Credited total")
+                    KeyValue("Paise summed", "${credited} paise")
+                    KeyValue("As money", paiseLabel(credited))
                     Text(
-                        "Kept in whole paise, never rounded. A FLOOR row means that bank refused sub-rupee and the leg settled at 100 paise.",
+                        "Every row is written only after the bank confirmed; nothing is rounded away.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -113,9 +92,9 @@ fun LedgerScreen(
             if (rows.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Default.ReceiptLong,
-                        title = "Ledger empty",
-                        subtitle = "Books appear only when a debit and the credit both confirm and a UTR is issued."
+                        icon = Icons.Default.Share,
+                        title = "Ledger is empty",
+                        subtitle = "Settled legs appear here with their UTR."
                     )
                 }
             }
@@ -125,32 +104,25 @@ fun LedgerScreen(
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
+                            StatusPill(
+                                if (isCredit) "CREDIT" else "DEBIT",
+                                if (isCredit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                            )
+                            Text(row.bankName, style = MaterialTheme.typography.titleMedium)
+                            Text(row.note, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                row.bankName,
-                                style = MaterialTheme.typography.titleMedium
+                                "UTR ${row.utr ?: "none"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                fmt.format(Date(row.bookedAt)),
+                                SimpleDateFormat("dd MMM yyyy HH:mm:ss", Locale.US).format(Date(row.bookedAt)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        StatusPill(
-                            text = if (isCredit) "CREDIT" else "DEBIT",
-                            color = if (isCredit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                        )
+                        Text(paiseLabel(row.amountPaise), style = MaterialTheme.typography.titleMedium)
                     }
-                    KeyValue("Paise", row.amountPaise.toString())
-                    row.utr?.let {
-                        KeyValue("UTR", it, MaterialTheme.colorScheme.primary)
-                    }
-                    Text(
-                        row.note,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.fillMaxWidth())
                 }
             }
         }

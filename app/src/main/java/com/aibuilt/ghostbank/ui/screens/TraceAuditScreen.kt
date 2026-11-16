@@ -4,14 +4,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -21,12 +23,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.db.HostLogEntity
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
@@ -41,32 +44,14 @@ import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
 fun TraceAuditRoute(container: AppContainer, onBack: () -> Unit) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val logs by vm.hostLog.collectAsStateWithLifecycle()
+    val canary by vm.canary.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
 
-    TraceAuditScreen(
-        logs = logs,
-        onClear = vm::clearLogs,
-        onBack = onBack
-    )
-}
-
-private fun statusColor(status: Int): androidx.compose.ui.graphics.Color = when {
-    status in 200..399 -> androidx.compose.ui.graphics.Color(0xFF38F0C0)
-    status in 400..499 -> androidx.compose.ui.graphics.Color(0xFFFFC857)
-    status >= 500 -> androidx.compose.ui.graphics.Color(0xFFFF6B6B)
-    else -> androidx.compose.ui.graphics.Color(0xFF9BB0C4)
-}
-
-@Composable
-fun TraceAuditScreen(
-    logs: List<HostLogEntity>,
-    onClear: () -> Unit,
-    onBack: () -> Unit
-) {
     Scaffold(
         topBar = {
             GhostTopBar(title = "Trace audit", onBack = onBack, actions = {
-                IconButton(onClick = onClear, enabled = logs.isNotEmpty()) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear")
+                IconButton(onClick = { vm.clearLogs() }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Clear logs")
                 }
             })
         }
@@ -76,51 +61,92 @@ fun TraceAuditScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("What is kept")
+                    SectionTitle("Canary probe")
                     Text(
-                        "Every exchange with its original status, hop count, final URL and the full body - including an HTML error page from a failed debit leg. A blocked run stays visible so the next diagnosis needs no screenshot. Homepages and the canary treat 2xx and 3xx as alive; only 4xx and 5xx count as dead.",
+                        "2xx and 3xx count as alive. Only 4xx and 5xx count as dead.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Button(onClick = vm::runCanary, enabled = !canary.running, modifier = Modifier.fillMaxWidth()) {
+                        Text("Probe now")
+                    }
+                    if (canary.running) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.padding(4.dp))
+                            Text("  probing...", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    canary.outcome?.let { outcome ->
+                        StatusPill(
+                            if (outcome.alive) "ALIVE" else "DEAD",
+                            if (outcome.alive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                        KeyValue("Status", outcome.status?.toString() ?: "none")
+                        KeyValue("Hops", outcome.hops.toString())
+                        KeyValue("Final URL", outcome.finalUrl.ifBlank { "-" })
+                        Text(outcome.detail, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
+
+            item { SectionTitle("Exchanges (${logs.size})") }
 
             if (logs.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Default.Shield,
-                        title = "No traffic logged",
-                        subtitle = "Run a harvest, a canary or the Leak Lab and every request lands here."
+                        icon = Icons.Default.Radar,
+                        title = "No exchanges yet",
+                        subtitle = "Every request is recorded here with its final address."
                     )
                 }
             }
 
             items(logs, key = { it.id }) { log ->
                 GhostCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusPill(
-                            text = if (log.status < 0) "transport dead" else "HTTP ${log.status}",
-                            color = statusColor(log.status)
-                        )
-                        Spacer(Modifier.weight(1f))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusPill(
+                                "${log.status}",
+                                if (log.status in 200..399) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error
+                            )
+                            StatusPill(log.stage, MaterialTheme.colorScheme.secondary)
+                            StatusPill("hops ${log.hops}", MaterialTheme.colorScheme.outline)
+                        }
                         Text(
-                            log.stage,
-                            style = MaterialTheme.typography.labelSmall,
+                            "${log.method} ${log.url}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            "final: ${log.finalUrl.ifBlank { "-" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Text(
+                            "${log.elapsedMs} ms",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        MonoBlock(log.responseBody.take(3000), maxHeight = 160)
+                        Button(
+                            onClick = {
+                                clipboard.setText(
+                                    AnnotatedString(
+                                        "${log.method} ${log.url}\nfinal=${log.finalUrl}\nstatus=${log.status}\n" +
+                                            log.responseBody
+                                    )
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Copy full body") }
                     }
-                    KeyValue("Method", log.method)
-                    KeyValue("URL", log.url, MaterialTheme.colorScheme.onSurfaceVariant)
-                    KeyValue("Final URL", log.finalUrl, MaterialTheme.colorScheme.onSurfaceVariant)
-                    KeyValue("Hops", log.hops.toString())
-                    KeyValue("Elapsed", "${log.elapsedMs} ms")
-                    MonoBlock(log.requestHeaders, maxHeight = 90)
-                    MonoBlock(log.responseBody.ifBlank { "(empty body)" }, maxHeight = 200)
                 }
             }
         }

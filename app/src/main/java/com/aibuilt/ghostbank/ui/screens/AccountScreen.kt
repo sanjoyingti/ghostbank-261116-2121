@@ -230,61 +230,33 @@ fun AccountScreen(
 
             items(accounts, key = { it.id }) { account ->
                 GhostCard {
-                    Column {
-                        Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            account.bankName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            account.accountNumber,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            account.ifsc,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusPill(
-                            text = if (account.isDestination) "destination" else "source",
-                            color = if (account.isDestination) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.outline
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                account.accountNumber,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                "${account.ifsc} - ${account.bankName}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (account.isDestination) {
+                                Spacer(Modifier.width(6.dp))
+                                StatusPill("destination", MaterialTheme.colorScheme.primary)
                             }
-                        )
-                        Spacer(Modifier.weight(1f))
+                        }
                         IconButton(onClick = { onSetDestination(account.id) }) {
                             Icon(
                                 imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Mark destination",
-                                tint = MaterialTheme.colorScheme.primary
+                                contentDescription = "Use as destination"
                             )
                         }
                         IconButton(onClick = { onDelete(account.id) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
-                    }
-                }
-            }
-
-            item {
-                Row {
-                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.AccountBalance, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Bank picker")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = onOpenTransfer, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.SwapVert, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Transfer")
                     }
                 }
             }

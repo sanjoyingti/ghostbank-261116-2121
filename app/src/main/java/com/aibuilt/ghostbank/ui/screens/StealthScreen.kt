@@ -4,38 +4,32 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.settings.GhostSettings
-import com.aibuilt.ghostbank.model.StealthLevel
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
-import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.ToggleRow
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun StealthRoute(
@@ -45,53 +39,8 @@ fun StealthRoute(
 ) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val report by vm.leak.collectAsStateWithLifecycle()
+    val leak by vm.leak.collectAsStateWithLifecycle()
 
-    StealthScreen(
-        settings = settings,
-        score = report.report?.score,
-        reasons = report.report?.reasons.orEmpty(),
-        onLevel = vm::setLevel,
-        onTor = vm::setTor,
-        onDoh = vm::setDoh,
-        onKillSwitch = vm::setKillSwitch,
-        onDiurnal = vm::setDiurnal,
-        onWindow = vm::setWindow,
-        onDecoy = vm::setDecoy,
-        onIdle = vm::setGhostIdle,
-        onFragment = vm::setFragmentation,
-        onCanary = vm::setCanary,
-        onPadding = vm::setPadding,
-        onGeo = vm::setGeo,
-        onCaps = vm::setCaps,
-        onScore = vm::score,
-        onOpenLeak = onOpenLeak,
-        onOpenTrace = onOpenTrace
-    )
-}
-
-@Composable
-fun StealthScreen(
-    settings: GhostSettings,
-    score: Int?,
-    reasons: List<String>,
-    onLevel: (StealthLevel) -> Unit,
-    onTor: (Boolean) -> Unit,
-    onDoh: (Boolean) -> Unit,
-    onKillSwitch: (Boolean) -> Unit,
-    onDiurnal: (Boolean) -> Unit,
-    onWindow: (Int, Int) -> Unit,
-    onDecoy: (Boolean) -> Unit,
-    onIdle: (Boolean) -> Unit,
-    onFragment: (Boolean) -> Unit,
-    onCanary: (Boolean) -> Unit,
-    onPadding: (Boolean) -> Unit,
-    onGeo: (Boolean) -> Unit,
-    onCaps: (Int, Int) -> Unit,
-    onScore: () -> Unit,
-    onOpenLeak: () -> Unit,
-    onOpenTrace: () -> Unit
-) {
     Scaffold(topBar = { GhostTopBar(title = "Stealth") }) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -105,134 +54,101 @@ fun StealthScreen(
                 GhostCard {
                     SectionTitle("Dial")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StealthLevel.entries.forEach { level ->
+                        vm.levels.forEach { level ->
                             FilterChip(
                                 selected = settings.stealthLevel == level,
-                                onClick = { onLevel(level) },
+                                onClick = { vm.setLevel(level) },
                                 label = { Text(level.name) }
                             )
                         }
                     }
                     Text(
-                        "Ghost is proxy-mandatory: with no exit, the run refuses to start rather than leak the raw IP.",
+                        "Ghost refuses to send anything unless Tor or a proxy exit exists.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusPill(
-                            if (settings.exitConfigured) "exit configured" else "no exit",
-                            if (settings.exitConfigured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (settings.torMode) "tor" else "${settings.proxyPool.size} proxies",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
 
             item {
                 GhostCard {
                     SectionTitle("Transport")
-                    ToggleRow("Tor mode", "Route through a local SOCKS 9050 listener", settings.torMode, onTor)
-                    ToggleRow("DNS-over-HTTPS", "Names resolve inside the tunnel, ISP resolver bypassed", settings.dohEnabled, onDoh)
-                    ToggleRow("Kill-switch", "Abandon the request if the exit drops, never send raw", settings.killSwitch, onKillSwitch)
-                    ToggleRow("Geo-matched exit", "Re-pick an exit whose country matches the banks", settings.geoMatch, onGeo)
+                    ToggleRow("Tor mode", "Route everything through Orbot on 127.0.0.1:9050", settings.torMode) { vm.setTor(it) }
+                    ToggleRow("DNS over HTTPS", "Names never reach the ISP resolver", settings.dohEnabled) { vm.setDoh(it) }
+                    ToggleRow("Kill-switch", "Abandon a call rather than use the raw IP", settings.killSwitch) { vm.setKillSwitch(it) }
+                    ToggleRow("Geo-matched exit", "Re-pick an exit whose country fits the bank", settings.geoMatch) { vm.setGeo(it) }
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Timing")
-                    ToggleRow(
-                        "Diurnal window",
-                        "Slow down at night, ${settings.windowStartHour}:00 to ${settings.windowEndHour}:00",
-                        settings.diurnalWindow,
-                        onDiurnal
-                    )
+                    SectionTitle("Timing and shape")
+                    ToggleRow("Diurnal window", "Slow down outside the chosen hours", settings.diurnalWindow) { vm.setDiurnal(it) }
+                    KeyValue("Window", "${settings.windowStartHour}:00 to ${settings.windowEndHour}:00")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onWindow((settings.windowStartHour + 1) % 24, settings.windowEndHour) }) {
-                            Text("start ${settings.windowStartHour}h")
-                        }
-                        OutlinedButton(onClick = { onWindow(settings.windowStartHour, (settings.windowEndHour + 1) % 24) }) {
-                            Text("end ${settings.windowEndHour}h")
-                        }
+                        OutlinedButton(
+                            onClick = { vm.setWindow((settings.windowStartHour + 1) % 24, settings.windowEndHour) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Start +1h") }
+                        OutlinedButton(
+                            onClick = { vm.setWindow(settings.windowStartHour, (settings.windowEndHour + 1) % 24) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("End +1h") }
                     }
-                    Text(
-                        "Gaps use a Poisson distribution, so they cluster like a person instead of ticking like a cron job.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    ToggleRow("Poisson jitter", "Gaps cluster like a person, not a cron", true) { }
+                    ToggleRow("Decoy browsing", "Load an unrelated bank first", settings.decoyBrowsing) { vm.setDecoy(it) }
+                    ToggleRow("Ghost idle", "Idle keep-alives after settling", settings.ghostIdle) { vm.setGhostIdle(it) }
+                    ToggleRow("Traffic padding", "Random pad header on each exchange", settings.padding) { vm.setPadding(it) }
+                    ToggleRow("Canary gate", "Probe before a run, pause if blocked", settings.canaryEnabled) { vm.setCanary(it) }
                 }
             }
 
             item {
                 GhostCard {
                     SectionTitle("Velocity caps")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = settings.maxRequestsPerMinute.toString(),
-                            onValueChange = { onCaps(it.toIntOrNull() ?: settings.maxRequestsPerMinute, settings.maxAccountsPerHour) },
-                            label = { Text("req/min") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = settings.maxAccountsPerHour.toString(),
-                            onValueChange = { onCaps(settings.maxRequestsPerMinute, it.toIntOrNull() ?: settings.maxAccountsPerHour) },
-                            label = { Text("accounts/hour") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Cover traffic & shape")
-                    ToggleRow("Decoy browsing", "Load an unrelated bank first so a burst is not only the endpoint", settings.decoyBrowsing, onDecoy)
-                    ToggleRow("Ghost idle", "Idle keep-alives after settling, then a clean close", settings.ghostIdle, onIdle)
-                    ToggleRow("Amount fragmentation", "Split pulls across minutes where the amount allows", settings.fragmentation, onFragment)
-                    ToggleRow("Padding & encoding variation", "Random pad header and encoding negotiation", settings.padding, onPadding)
-                    ToggleRow("Canary gate", "Innocuous GET first, run never starts if blocked", settings.canaryEnabled, onCanary)
+                    Text("Requests per minute: ${settings.maxRequestsPerMinute}")
+                    Slider(
+                        value = settings.maxRequestsPerMinute.toFloat(),
+                        onValueChange = { vm.setCaps(it.roundToInt(), settings.maxAccountsPerHour) },
+                        valueRange = 5f..200f
+                    )
+                    Text("Accounts per hour: ${settings.maxAccountsPerHour}")
+                    Slider(
+                        value = settings.maxAccountsPerHour.toFloat(),
+                        onValueChange = { vm.setCaps(settings.maxRequestsPerMinute, it.roundToInt()) },
+                        valueRange = 1f..200f
+                    )
                 }
             }
 
             item {
                 GhostCard {
                     SectionTitle("Stealth score")
-                    if (score == null) {
+                    val report = leak.report
+                    if (report == null) {
                         Text(
-                            "Not computed yet.",
+                            "Score the current configuration.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        Text("$score / 100", style = MaterialTheme.typography.headlineSmall)
+                        Text("${report.score}/100", style = MaterialTheme.typography.headlineSmall)
+                        report.reasons.forEach {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
-                    Button(onClick = onScore, modifier = Modifier.fillMaxWidth()) { Text("Score current settings") }
-                    reasons.forEach {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Button(onClick = vm::score, modifier = Modifier.fillMaxWidth()) { Text("Score now") }
                 }
             }
 
             item {
-                Button(onClick = onOpenLeak, modifier = Modifier.fillMaxWidth()) { Text("Open Leak Lab") }
-            }
-            item {
-                OutlinedButton(onClick = onOpenTrace, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open Trace Audit")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onOpenLeak, modifier = Modifier.weight(1f)) {
+                        Text("Leak check")
+                    }
+                    OutlinedButton(onClick = onOpenTrace, modifier = Modifier.weight(1f)) {
+                        Text("Trace audit")
+                    }
                 }
             }
         }
