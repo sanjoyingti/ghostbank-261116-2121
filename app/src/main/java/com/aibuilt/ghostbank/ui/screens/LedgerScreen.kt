@@ -4,9 +4,10 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -50,23 +50,19 @@ fun LedgerRoute(container: AppContainer) {
     val credited by vm.creditedPaise.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.getDefault())
+    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.US)
 
     Scaffold(
         topBar = {
             GhostTopBar(title = "Ledger", actions = {
                 IconButton(onClick = {
                     scope.launch {
-                        val intent = vm.export(context)
-                        if (intent != null) {
-                            context.startActivity(
-                                Intent.createChooser(intent, "Export ledger").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
+                        vm.export(context)?.let { intent ->
+                            context.startActivity(Intent.createChooser(intent, "Export ledger"))
                         }
                     }
-                }) {
-                    Icon(Icons.Default.Share, contentDescription = "Export CSV")
-                }
+                }) { Icon(Icons.Default.Share, contentDescription = "Export CSV") }
+                TextButton(onClick = vm::clear) { Text("Clear") }
             })
         }
     ) { padding ->
@@ -80,47 +76,36 @@ fun LedgerRoute(container: AppContainer) {
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Credited to destination")
+                    SectionTitle("Exact paise ledger")
+                    KeyValue("Total credited", "${paiseLabel(credited)} = $credited paise")
+                    KeyValue("Rows", rows.size.toString())
                     Text(
-                        "$credited paise (${paiseLabel(credited)}) across ${rows.count { it.direction == LedgerDirection.CREDIT }} credit rows",
-                        style = MaterialTheme.typography.bodyLarge
+                        "Amounts stay integers in paise, so 25 harvests read as 25 paise, never rounded.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    TextButton(onClick = vm::clear) { Text("Clear ledger") }
                 }
             }
 
             if (rows.isEmpty()) {
-                item {
-                    EmptyState(
-                        icon = Icons.Default.ReceiptLong,
-                        title = "Nothing booked yet",
-                        subtitle = "Rows appear only after a debit confirms and a UTR is captured."
-                    )
-                }
-            } else {
-                items(rows, key = { it.id }) { row ->
-                    GhostCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                fmt.format(Date(row.bookedAt)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatusPill(
-                                text = row.direction.name,
-                                color = if (row.direction == LedgerDirection.CREDIT) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.secondary
-                                }
-                            )
-                        }
-                        KeyValue("Bank", row.bankName)
-                        KeyValue("Amount", "${row.amountPaise} paise")
-                        row.utr?.let { KeyValue("UTR", it) }
-                        KeyValue("Note", row.note)
+                item { EmptyState(Icons.Default.ReceiptLong, "Empty ledger", "Settled harvests are booked here with their UTR.") }
+            }
+
+            items(rows, key = { it.id }) { row ->
+                GhostCard {
+                    Row {
+                        StatusPill(
+                            row.direction.name,
+                            if (row.direction == LedgerDirection.CREDIT) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(paiseLabel(row.amountPaise), style = MaterialTheme.typography.titleMedium)
                     }
+                    KeyValue("Bank", row.bankName)
+                    KeyValue("UTR", row.utr ?: "not issued")
+                    KeyValue("Note", row.note)
+                    KeyValue("Time", fmt.format(Date(row.bookedAt)))
                 }
             }
         }

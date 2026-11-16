@@ -4,20 +4,20 @@ import androidx.room.TypeConverter
 import com.aibuilt.ghostbank.model.HarvestState
 import com.aibuilt.ghostbank.model.LedgerDirection
 
-/** Turns the two enum columns into plain text so Room can store them. */
+/** Stores the two enums as plain text so the columns stay readable in the raw log. */
 class Converters {
 
     @TypeConverter
-    fun fromHarvestState(state: HarvestState): String = state.name
+    fun toHarvestState(value: String): HarvestState =
+        runCatching { HarvestState.valueOf(value) }.getOrDefault(HarvestState.PENDING)
 
     @TypeConverter
-    fun toHarvestState(raw: String): HarvestState =
-        runCatching { HarvestState.valueOf(raw) }.getOrDefault(HarvestState.PENDING)
+    fun fromHarvestState(value: HarvestState): String = value.name
 
     @TypeConverter
-    fun fromLedgerDirection(direction: LedgerDirection): String = direction.name
+    fun toDirection(value: String): LedgerDirection =
+        runCatching { LedgerDirection.valueOf(value) }.getOrDefault(LedgerDirection.DEBIT)
 
     @TypeConverter
-    fun toLedgerDirection(raw: String): LedgerDirection =
-        runCatching { LedgerDirection.valueOf(raw) }.getOrDefault(LedgerDirection.DEBIT)
+    fun fromDirection(value: LedgerDirection): String = value.name
 }

@@ -3,13 +3,15 @@ package com.aibuilt.ghostbank.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -23,25 +25,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.BankRegistry
-import com.aibuilt.ghostbank.model.EndpointState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
-import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.BankViewModel
 
 @Composable
-fun BankPickerRoute(
-    container: AppContainer,
-    onBack: () -> Unit,
-    onPick: (String) -> Unit
-) {
+fun BankPickerRoute(container: AppContainer, onBack: () -> Unit, onPick: (String) -> Unit) {
     val vm: BankViewModel = viewModel(factory = ghostFactory { BankViewModel() })
     val query by vm.query.collectAsStateWithLifecycle()
+    val banks = vm.filtered(query)
 
     Scaffold(topBar = { GhostTopBar(title = "Banks", onBack = onBack) }) { padding ->
         LazyColumn(
@@ -56,56 +52,49 @@ fun BankPickerRoute(
                 OutlinedTextField(
                     value = query,
                     onValueChange = vm::setQuery,
-                    label = { Text("Search bank or IFSC code") },
+                    label = { Text("Search name or IFSC prefix") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             item {
                 Text(
-                    "Tapping a bank fills its IFSC prefix into the account form. Verified routes only: the resolver is the single live-proven endpoint.",
+                    "${vm.banks.size} banks registered. Per-bank cap shown; the verified resolver is shared by all of them.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            items(vm.filtered(query), key = { it.code }) { bank ->
+            items(banks, key = { it.code }) { bank ->
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AccountBalance, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text(
-                            text = "  ${bank.name}",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatusPill(bank.code)
+                        Text(bank.name, style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.width(8.dp))
+                        StatusPill(bank.code, MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.weight(1f))
+                        if (bank.verifiedEndpoints.isNotEmpty()) {
+                            StatusPill("VERIFIED route", MaterialTheme.colorScheme.primary)
+                        }
+                        if (bank.probeOnlyEndpoints.isNotEmpty()) {
+                            Spacer(Modifier.width(4.dp))
+                            StatusPill("${bank.probeOnlyEndpoints.size} probe-only", MaterialTheme.colorScheme.tertiary)
+                        }
                     }
                     KeyValue("Rail", bank.rail.label)
-                    KeyValue("Per-transaction cap", paiseLabel(bank.perTxCapPaise))
-                    KeyValue("Verified routes", bank.verifiedEndpoints.size.toString())
-                    KeyValue(
-                        "Probe-only routes",
-                        bank.probeOnlyEndpoints.size.toString(),
-                        MaterialTheme.colorScheme.tertiary
-                    )
-                    SectionTitle("Use this bank")
-                    bank.verifiedEndpoints.firstOrNull { it.state == EndpointState.VERIFIED }?.let {
-                        Text(
-                            "Verified: ${it.note}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                    KeyValue("Per-txn cap", paiseLabel(bank.perTxCapPaise))
+                    KeyValue("Homepage", bank.homepage)
+                    bank.endpoints.forEach { ep ->
+                        KeyValue(
+                            ep.id,
+                            "${ep.state.name} status=${ep.probeStatus ?: "-"}",
+                            if (ep.state.name == "VERIFIED") MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.tertiary
                         )
                     }
                     androidx.compose.material3.TextButton(onClick = { onPick(bank.code) }) {
-                        Text("Prefill ${bank.code}0...")
+                        Text("Use this bank")
                     }
                 }
-            }
-            item {
-                Text(
-                    "Registry size: ${BankRegistry.banks.size} banks, ${BankRegistry.verifiedDebitEndpoints.size} verified routes, ${BankRegistry.probeOnlyEndpoints.size} probe-only.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

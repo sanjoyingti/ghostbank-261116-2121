@@ -1,48 +1,37 @@
 package com.aibuilt.ghostbank.data
 
-import com.aibuilt.ghostbank.model.BankEndpoint
 import com.aibuilt.ghostbank.model.EndpointState
 
 /**
- * Fix 2 in inspectable form: the same rule the unit test enforces, surfaced to the UI so the
- * claim "nothing is verified without a live probe" can be checked on the phone.
+ * Fix 2 self-check. An endpoint may only claim VERIFIED when the recorded probe actually
+ * returned a live 2xx/3xx and carries its evidence string.
  */
 object RegistryAudit {
 
-    data class Violation(val bankCode: String, val endpointId: String, val reason: String)
-
-    fun violations(): List<Violation> = BankRegistry.banks.flatMap { bank ->
-        bank.endpoints.mapNotNull { endpoint ->
-            when {
-                endpoint.state == EndpointState.VERIFIED && endpoint.probeStatus == null ->
-                    Violation(bank.code, endpoint.id, "marked VERIFIED with no probe status at all")
-                endpoint.state == EndpointState.VERIFIED && endpoint.probeStatus !in 200..399 ->
-                    Violation(bank.code, endpoint.id, "marked VERIFIED but last probe was ${endpoint.probeStatus}")
-                else -> null
+    fun violations(): List<String> {
+        val out = ArrayList<String>()
+        BankRegistry.banks.forEach { bank ->
+            if (bank.endpoints.isEmpty()) out += "${bank.code}: bank has no endpoint at all"
+            bank.endpoints.forEach { ep ->
+                if (ep.state == EndpointState.VERIFIED) {
+                    val status = ep.probeStatus
+                    if (status == null || status !in 200..399) {
+                        out += "${bank.code}/${ep.id}: VERIFIED without a live 2xx/3xx probe (status=$status)"
+                    }
+                    if (ep.probeEvidence.isBlank()) {
+                        out += "${bank.code}/${ep.id}: VERIFIED without probe evidence"
+                    }
+                }
             }
         }
+        val inventedDebit = BankRegistry.verifiedDebitEndpoints.any {
+            it.urlTemplate.contains("/api/imps/p2a/debit")
+        }
+        if (inventedDebit) out += "invented /api/imps/p2a/debit is still in the verified set"
+        if (BankRegistry.banks.size < 27) out += "only ${BankRegistry.banks.size} banks registered"
+        if (BankRegistry.verifiedDebitEndpoints.isEmpty()) out += "no verified endpoint at all"
+        return out
     }
 
-    val ok: Boolean get() = violations().isEmpty()
-
-    fun verifiedCount(): Int = BankRegistry.banks.sumOf { bank -> bank.verifiedEndpoints.size }
-
-    fun probeOnlyCount(): Int = BankRegistry.banks.sumOf { bank -> bank.probeOnlyEndpoints.size }
-
-    fun bannedRouteInVerifiedSet(): Boolean =
-        BankRegistry.verifiedDebitEndpoints.any { it.urlTemplate.contains("/api/imps/p2a/debit") }
-
-    /** Endpoints a debit leg may actually use for this bank. */
-    fun debitEndpointsFor(bankCode: String): List<BankEndpoint> =
-        BankRegistry.byCode(bankCode)?.verifiedEndpoints.orEmpty()
-
-    fun describe(): String = buildString {
-        appendLine("Registry rule: VERIFIED only with a live 2xx/3xx probe, else probe-only.")
-        appendLine("Banks: ${BankRegistry.banks.size}")
-        appendLine("Verified endpoints: ${verifiedCount()}")
-        appendLine("Probe-only endpoints: ${probeOnlyCount()}")
-        appendLine("Invented /api/imps/p2a/debit still verified: ${bannedRouteInVerifiedSet()}")
-        if (ok) appendLine("Self-check: PASS") else appendLine("Self-check: FAIL")
-        violations().forEach { appendLine("VIOLATION ${it.bankCode} ${it.endpointId} - ${it.reason}") }
-    }
+    fun isClean(): Boolean = violations().isEmpty()
 }

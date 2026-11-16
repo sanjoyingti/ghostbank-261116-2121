@@ -3,9 +3,11 @@ package com.aibuilt.ghostbank.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -176,7 +178,7 @@ fun AccountScreen(
                     OutlinedTextField(
                         value = ui.ifsc,
                         onValueChange = onIfsc,
-                        label = { Text("IFSC (for example SBIN0001722)") },
+                        label = { Text("IFSC (e.g. SBIN0001722)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -187,71 +189,83 @@ fun AccountScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Button(
-                            onClick = onSave,
-                            enabled = !ui.busy,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Check and save") }
-                        OutlinedButton(
-                            onClick = onSaveAsDestination,
-                            enabled = !ui.busy,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Save as destination") }
+                    if (ui.busy) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "Checking the IFSC against the live resolver...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.fillMaxWidth()) {
-                        Text("Pick a bank and fill the IFSC prefix")
-                    }
-                    if (ui.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     ui.error?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                     ui.info?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onSave, enabled = !ui.busy) { Text("Save") }
+                        OutlinedButton(onClick = onSaveAsDestination, enabled = !ui.busy) {
+                            Text("Save as destination")
+                        }
+                    }
                 }
             }
 
-            item { SectionTitle("Saved accounts (${accounts.size})") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Registry (${accounts.size})")
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onOpenBanks) { Text("Pick a bank") }
+                }
+            }
 
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Default.Person,
-                        title = "No accounts yet",
-                        subtitle = "Add the source accounts you want to pull a single paisa from."
+                        Icons.Default.Person,
+                        "No accounts yet",
+                        "Add your destination first, then any source accounts you want to harvest."
                     )
                 }
-            } else {
-                items(accounts, key = { it.id }) { account ->
-                    GhostCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text(
-                                text = "  ${account.bankName}",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (account.isDestination) {
-                                StatusPill("destination")
-                            }
-                            IconButton(onClick = { onSetDestination(account.id) }) {
-                                Icon(
-                                    imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                    contentDescription = "Make destination"
-                                )
-                            }
-                            IconButton(onClick = { onDelete(account.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete")
-                            }
+            }
+
+            items(accounts, key = { it.id }) { account ->
+                GhostCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.AccountBalance,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            maskAccount(account.accountNumber),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        if (account.isDestination) {
+                            StatusPill("destination", MaterialTheme.colorScheme.primary)
                         }
-                        KeyValue("Account", maskAccount(account.accountNumber))
-                        KeyValue("IFSC", account.ifsc)
-                        KeyValue("Label", account.holderLabel)
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { onSetDestination(account.id) }) {
+                            Icon(
+                                if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Mark destination"
+                            )
+                        }
+                        IconButton(onClick = { onDelete(account.id) }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
+                    KeyValue("IFSC", account.ifsc)
+                    KeyValue("Bank", account.bankName)
+                    KeyValue("Label", account.holderLabel)
+                    KeyValue("Fingerprint", account.fingerprint.take(16) + "...")
                 }
             }
         }

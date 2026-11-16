@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.GhostBank" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/ghost_light_bg</item>
+    <style name="Theme.GhostBank" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF0B0F14</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
