@@ -10,8 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +28,6 @@ import com.aibuilt.ghostbank.data.db.HostLogEntity
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.MonoBlock
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
@@ -44,11 +42,22 @@ fun TraceAuditRoute(container: AppContainer, onBack: () -> Unit) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val logs by vm.hostLog.collectAsStateWithLifecycle()
 
+    TraceAuditScreen(logs = logs, onClear = vm::clearLogs, onBack = onBack)
+}
+
+@Composable
+fun TraceAuditScreen(
+    logs: List<HostLogEntity>,
+    onClear: () -> Unit,
+    onBack: () -> Unit
+) {
+    val fmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+
     Scaffold(
         topBar = {
             GhostTopBar(title = "Trace audit", onBack = onBack, actions = {
-                IconButton(onClick = vm::clearLogs) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear log")
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear log")
                 }
             })
         }
@@ -58,14 +67,14 @@ fun TraceAuditRoute(container: AppContainer, onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("What the far end saw")
+                    SectionTitle("What this is")
                     Text(
-                        "2xx and 3xx count as alive. The original status, the hop count and the final URL are kept so the next diagnosis needs no screenshot.",
+                        "Every exchange, with the original status, the hop count and the final address after redirects. A failed debit keeps its whole HTML body here, so the next diagnosis needs no screenshots.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -75,52 +84,56 @@ fun TraceAuditRoute(container: AppContainer, onBack: () -> Unit) {
             if (logs.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Default.TravelExplore,
-                        title = "No traffic recorded",
-                        subtitle = "Every request lands here with its raw body."
+                        icon = Icons.Default.DeleteSweep,
+                        title = "No traffic logged",
+                        subtitle = "Run a harvest or a leak check and the exchanges show up here."
                     )
                 }
+            } else {
+                items(logs, key = { it.id }) { log ->
+                    val alive = log.status in 200..399
+                    GhostCard {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${log.stage} · ${log.method} · ${if (log.status < 0) "transport dead" else log.status.toString()}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (alive) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    }
+                                )
+                                Text(
+                                    log.url,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "hops ${log.hops} · ${log.elapsedMs}ms · ${fmt.format(Date(log.at))}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (log.finalUrl.isNotBlank() && log.finalUrl != log.url) {
+                                    Text(
+                                        "final ${log.finalUrl}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                            }
+                            StatusPill(
+                                text = if (alive) "ALIVE" else "DEAD",
+                                color = if (alive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        MonoBlock(log.responseBody.ifBlank { "(empty body)" }, maxHeight = 180)
+                    }
+                }
             }
-
-            items(logs, key = { it.id }) { log -> LogRow(log) }
         }
-    }
-}
-
-@Composable
-private fun LogRow(log: HostLogEntity) {
-    val color = when {
-        log.status in 200..399 -> MaterialTheme.colorScheme.primary
-        log.status < 0 -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.error
-    }
-    GhostCard {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            StatusPill(text = "status ${log.status}", color = color)
-            StatusPill(text = "${log.hops} hop(s)", color = MaterialTheme.colorScheme.secondary)
-            StatusPill(text = log.stage, color = MaterialTheme.colorScheme.outline)
-        }
-        KeyValue("Method", log.method)
-        Text(
-            log.url,
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (log.finalUrl != log.url) {
-            Text(
-                "final: ${log.finalUrl}",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Text(
-            SimpleDateFormat("dd MMM HH:mm:ss", Locale.getDefault()).format(Date(log.at)) +
-                " - ${log.elapsedMs}ms",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        MonoBlock(text = log.responseBody.ifBlank { "(empty body)" }, maxHeight = 200)
     }
 }

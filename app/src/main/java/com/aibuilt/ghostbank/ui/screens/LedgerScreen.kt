@@ -11,14 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -34,9 +34,7 @@ import com.aibuilt.ghostbank.model.LedgerDirection
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
-import com.aibuilt.ghostbank.ui.components.StatusPill
-import com.aibuilt.ghostbank.ui.components.paiseLabel
+import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.LedgerViewModel
 import kotlinx.coroutines.launch
@@ -49,22 +47,40 @@ fun LedgerRoute(container: AppContainer) {
     val vm: LedgerViewModel = viewModel(factory = ghostFactory { LedgerViewModel(container) })
     val rows by vm.rows.collectAsStateWithLifecycle()
     val credited by vm.creditedPaise.collectAsStateWithLifecycle()
+
+    LedgerScreen(
+        rows = rows,
+        creditedPaise = credited,
+        onExport = null,
+        onClear = vm::clear,
+        exportIntent = { vm.export(it) }
+    )
+}
+
+@Composable
+fun LedgerScreen(
+    rows: List<LedgerEntity>,
+    creditedPaise: Long,
+    onExport: (() -> Unit)?,
+    onClear: () -> Unit,
+    exportIntent: suspend (android.content.Context) -> Intent?
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.US)
 
     Scaffold(
         topBar = {
             GhostTopBar(title = "Ledger", actions = {
                 IconButton(onClick = {
                     scope.launch {
-                        val intent = vm.export(context)
-                        if (intent != null) {
+                        exportIntent(context)?.let { intent ->
                             context.startActivity(Intent.createChooser(intent, "Export ledger"))
                         }
                     }
-                }) { Icon(Icons.Default.IosShare, contentDescription = "Export CSV") }
-                IconButton(onClick = vm::clear) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear ledger")
+                    onExport?.invoke()
+                }) {
+                    Icon(Icons.Default.Share, contentDescription = "Export")
                 }
             })
         }
@@ -74,17 +90,23 @@ fun LedgerRoute(container: AppContainer) {
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    KeyValue("Credited to destination", paiseLabel(credited))
+                    SectionTitle("Credited in paise")
                     Text(
-                        "Amounts are stored as whole paise, never rounded. Rows appear only after both legs confirm.",
+                        "$creditedPaise paise",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Every row is kept in whole paise, so the total never rounds away. The ledger lives only on this phone.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    TextButton(onClick = onClear) { Text("Clear ledger") }
                 }
             }
 
@@ -92,47 +114,40 @@ fun LedgerRoute(container: AppContainer) {
                 item {
                     EmptyState(
                         icon = Icons.Default.ReceiptLong,
-                        title = "Ledger empty",
-                        subtitle = "Booked runs land here with their UTR."
+                        title = "Nothing booked yet",
+                        subtitle = "Rows appear only after a debit confirms and the credit lands."
                     )
                 }
-            }
-
-            items(rows, key = { it.id }) { row -> LedgerRow(row) }
-        }
-    }
-}
-
-@Composable
-private fun LedgerRow(row: LedgerEntity) {
-    val credit = row.direction == LedgerDirection.CREDIT
-    GhostCard {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f)) {
-                StatusPill(
-                    text = row.direction.name,
-                    color = if (credit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                )
-                Text(row.bankName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    SimpleDateFormat("dd MMM yyyy HH:mm:ss", Locale.getDefault()).format(Date(row.bookedAt)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Column {
-                Text(paiseLabel(row.amountPaise), style = MaterialTheme.typography.titleMedium)
-                Text(
-                    row.utr ?: "no utr",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
+            } else {
+                items(rows, key = { it.id }) { row ->
+                    GhostCard {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${row.direction.name} · ${row.amountPaise} paise",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (row.direction == LedgerDirection.CREDIT) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondary
+                                    }
+                                )
+                                Text(
+                                    "${row.bankName} · ${row.note}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "utr ${row.utr ?: "-"} · ${fmt.format(Date(row.bookedAt))}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-        Text(
-            row.note,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }

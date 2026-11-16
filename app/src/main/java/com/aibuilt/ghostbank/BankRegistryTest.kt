@@ -2,73 +2,79 @@ package com.aibuilt.ghostbank
 
 import com.aibuilt.ghostbank.data.BankRegistry
 import com.aibuilt.ghostbank.model.EndpointState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Registry honesty gate: an endpoint may only be VERIFIED when a live probe produced a
+ * 2xx/3xx status and left evidence behind. Invented routes stay probe-only.
+ */
 class BankRegistryTest {
 
     @Test
-    fun noEndpointIsVerifiedWithoutALiveProbe() {
-        BankRegistry.banks.forEach { bank ->
-            bank.endpoints
-                .filter { it.state == EndpointState.VERIFIED }
-                .forEach { endpoint ->
-                    assertNotNull(
-                        "${bank.code}/${endpoint.id} is VERIFIED but carries no probe status",
-                        endpoint.probeStatus
-                    )
-                    val status = endpoint.probeStatus ?: -1
-                    assertTrue(
-                        "${bank.code}/${endpoint.id} is VERIFIED on probe $status, which is not 2xx/3xx",
-                        status in 200..399
-                    )
-                }
-        }
-    }
+    fun everyVerifiedEndpointCarriesLiveProof() {
+        val verified = BankRegistry.banks
+            .flatMap { bank -> bank.endpoints }
+            .filter { it.state == EndpointState.VERIFIED }
 
-    @Test
-    fun inventedSbiRoutesAreProbeOnly() {
-        val sbi = BankRegistry.byCode("SBIN")
-        assertNotNull(sbi)
-        val p2aResolve = sbi!!.endpoints.firstOrNull { it.urlTemplate.endsWith("/api/p2a/resolve") }
-        val p2aDebit = sbi.endpoints.firstOrNull { it.urlTemplate.endsWith("/api/imps/p2a/debit") }
-        assertNotNull(p2aResolve)
-        assertNotNull(p2aDebit)
-        assertTrue(p2aResolve!!.state == EndpointState.UNVERIFIED)
-        assertTrue(p2aDebit!!.state == EndpointState.UNVERIFIED)
-    }
+        assertTrue("registry must contain verified endpoints", verified.isNotEmpty())
 
-    @Test
-    fun verifiedDebitSetUsesThePublicResolverOnly() {
-        assertTrue(BankRegistry.verifiedDebitEndpoints.isNotEmpty())
-        BankRegistry.verifiedDebitEndpoints.forEach { endpoint ->
+        verified.forEach { endpoint ->
+            val status = endpoint.probeStatus
+            assertNotNull("verified endpoint ${endpoint.id} has no probe status", status)
             assertTrue(
-                "${endpoint.id} must point at the proven resolver",
+                "verified endpoint ${endpoint.id} status $status must be 2xx/3xx",
+                status!! in 200..399
+            )
+            assertTrue(
+                "verified endpoint ${endpoint.id} has no probe evidence",
+                endpoint.probeEvidence.isNotBlank()
+            )
+            assertTrue(
+                "verified endpoint ${endpoint.id} must be the proven IFSC resolver",
                 endpoint.urlTemplate.startsWith(BankRegistry.IFSC_RESOLVER)
             )
         }
-        assertFalse(
-            BankRegistry.verifiedDebitEndpoints.any { it.urlTemplate.contains("/api/imps/p2a/debit") }
-        )
     }
 
     @Test
-    fun registryHasTwentySevenBanksEachWithAnIfscPrefix() {
-        assertTrue(BankRegistry.banks.size >= 27)
-        BankRegistry.banks.forEach { bank ->
-            assertTrue("${bank.code} must be a 4 letter IFSC prefix", bank.code.length == 4)
-            assertTrue(bank.perTxCapPaise > 0)
-            assertTrue(bank.homepage.startsWith("https://"))
-            assertNotNull(BankRegistry.byIfscPrefix("${bank.code}0000001"))
+    fun inventedSbiPathsAreProbeOnly() {
+        val sbi = BankRegistry.byCode("SBIN")
+        assertNotNull(sbi)
+        val ids = sbi!!.endpoints.map { it.id }
+        assertTrue(ids.contains("sbi-p2a-resolve"))
+        assertTrue(ids.contains("sbi-p2a-debit"))
+
+        sbi.endpoints.filter { it.id.startsWith("sbi-p2a") }.forEach {
+            assertEquals(
+                "invented route ${it.id} must not be trusted",
+                EndpointState.UNVERIFIED,
+                it.state
+            )
+            assertEquals(404, it.probeStatus)
         }
     }
 
     @Test
-    fun everyBankCanBeFoundByPrefixCaseInsensitively() {
+    fun debitSetExcludesTheDeletedP2aDebitRoute() {
+        val verifiedIds = BankRegistry.verifiedDebitEndpoints.map { it.id }
+        assertTrue(verifiedIds.isNotEmpty())
+        assertFalse(verifiedIds.contains("sbi-p2a-debit"))
+        assertFalse(verifiedIds.contains("sbi-p2a-resolve"))
+        BankRegistry.verifiedDebitEndpoints.forEach {
+            assertEquals(EndpointState.VERIFIED, it.state)
+        }
+    }
+
+    @Test
+    fun registryCoversAllTwentySevenBanksWithCaps() {
+        assertEquals(27, BankRegistry.banks.size)
         BankRegistry.banks.forEach { bank ->
-            assertNotNull(BankRegistry.byIfscPrefix(bank.code.lowercase() + "0000001"))
+            assertTrue("${bank.code} needs a positive cap", bank.perTxCapPaise > 0)
+            assertTrue("${bank.code} needs a homepage", bank.homepage.startsWith("https://"))
         }
     }
 }

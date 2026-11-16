@@ -25,14 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
+import com.aibuilt.ghostbank.model.Bank
 import com.aibuilt.ghostbank.model.EndpointState
-import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
+import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.BankViewModel
 
 @Composable
@@ -41,78 +41,102 @@ fun BankPickerRoute(
     onBack: () -> Unit,
     onPick: (String) -> Unit
 ) {
-    val vm: BankViewModel = viewModel()
+    val vm: BankViewModel = viewModel(factory = ghostFactory { BankViewModel() })
     val query by vm.query.collectAsStateWithLifecycle()
 
-    Scaffold(topBar = { GhostTopBar(title = "Bank picker", onBack = onBack) }) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = vm::setQuery,
-                label = { Text("Search bank or code") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            )
-            val results = vm.filtered(query)
-            if (results.isEmpty()) {
-                EmptyState(
-                    icon = Icons.Default.Search,
-                    title = "No bank matches",
-                    subtitle = "Try the IFSC prefix, for example SBIN or HDFC."
+    BankPickerScreen(
+        query = query,
+        banks = vm.filtered(query),
+        onQuery = vm::setQuery,
+        onPick = onPick,
+        onBack = onBack
+    )
+}
+
+@Composable
+fun BankPickerScreen(
+    query: String,
+    banks: List<Bank>,
+    onQuery: (String) -> Unit,
+    onPick: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    Scaffold(topBar = { GhostTopBar(title = "Banks", onBack = onBack) }) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQuery,
+                    label = { Text("Search name or IFSC prefix") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(results, key = { it.code }) { bank ->
-                        GhostCard {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(bank.name, style = MaterialTheme.typography.titleMedium)
-                                    Text(
-                                        bank.code,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                StatusPill(bank.rail.label, MaterialTheme.colorScheme.secondary)
-                            }
-                            KeyValue("Per transfer cap", paiseLabel(bank.perTxCapPaise))
-                            KeyValue("Homepage", bank.homepage)
-                            SectionTitle("Endpoints")
-                            bank.endpoints.forEach { ep ->
-                                val verified = ep.state == EndpointState.VERIFIED
-                                Column {
-                                    StatusPill(
-                                        text = if (verified) "VERIFIED (probe ${ep.probeStatus})" else "probe only (${ep.probeStatus})",
-                                        color = if (verified) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.tertiary
-                                        }
-                                    )
-                                    Text(
-                                        ep.urlTemplate,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+            }
+
+            if (banks.isEmpty()) {
+                item {
+                    GhostCard {
+                        Text(
+                            "No bank matches that search.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            items(banks, key = { it.code }) { bank ->
+                GhostCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(bank.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = "Use ${bank.code} prefix",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp)
+                                "${bank.code} · cap ${paiseLabel(bank.perTxCapPaise)} · ${bank.rail.label}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            androidx.compose.material3.TextButton(onClick = { onPick(bank.code) }) {
-                                Text("Pick this bank")
+                        }
+                        StatusPill(
+                            text = "use",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        bank.homepage,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SectionTitle("Registry entries")
+                    bank.endpoints.forEach { endpoint ->
+                        val verified = endpoint.state == EndpointState.VERIFIED
+                        Text(
+                            "${if (verified) "VERIFIED" else "probe only"} · ${endpoint.urlTemplate}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (verified) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.tertiary
                             }
+                        )
+                        Text(
+                            endpoint.probeEvidence,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.Button(onClick = { onPick(bank.code) }) {
+                            Text("Prefill ${bank.code}")
                         }
                     }
                 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -49,6 +50,9 @@ import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.AccountUi
 import com.aibuilt.ghostbank.viewmodel.AccountViewModel
+
+fun maskAccount(number: String): String =
+    if (number.length <= 4) number else "XXXX" + number.takeLast(4)
 
 @Composable
 fun AccountRoute(
@@ -145,7 +149,7 @@ fun AccountScreen(
                     SectionTitle("Destination")
                     if (destination == null) {
                         Text(
-                            "Nothing marked as destination yet. Add an account and save it as destination.",
+                            "Nothing marked as destination yet. Add an account and save it as destination — credits land there.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -200,16 +204,24 @@ fun AccountScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.padding(4.dp))
                             Text(
-                                "  Resolving the IFSC on the live resolver...",
+                                "  Resolving the IFSC on the live resolver…",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
                     ui.error?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                     ui.info?.let {
-                        Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }
@@ -219,18 +231,34 @@ fun AccountScreen(
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
-                        icon = Icons.Default.AccountBalance,
+                        icon = Icons.Default.Person,
                         title = "No accounts yet",
-                        subtitle = "Add the accounts you want to harvest, or save your own account as the destination."
+                        subtitle = "Add at least one account. Each account is harvested once, ever."
                     )
                 }
             } else {
                 items(accounts, key = { it.id }) { account ->
-                    AccountRow(
+                    GhostAccountRow(
                         account = account,
-                        onSetDestination = onSetDestination,
-                        onDelete = onDelete
+                        isDestination = account.id == destination?.id,
+                        onSetDestination = { onSetDestination(account.id) },
+                        onDelete = { onDelete(account.id) }
                     )
+                }
+            }
+
+            item { SectionTitle("Bank registry") }
+
+            item {
+                GhostCard {
+                    Text(
+                        "All 27 banks carry their own per-transaction cap. The verified public IFSC resolver is the only route that may confirm a resolve.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open bank picker")
+                    }
                 }
             }
         }
@@ -238,50 +266,45 @@ fun AccountScreen(
 }
 
 @Composable
-private fun AccountRow(
+private fun GhostAccountRow(
     account: AccountEntity,
-    onSetDestination: (Long) -> Unit,
-    onDelete: (Long) -> Unit
+    isDestination: Boolean,
+    onSetDestination: () -> Unit,
+    onDelete: () -> Unit
 ) {
     GhostCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = maskAccount(account.accountNumber),
-                    style = MaterialTheme.typography.bodyMedium,
+                    maskAccount(account.accountNumber),
+                    style = MaterialTheme.typography.titleMedium,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text = "${account.bankName} - ${account.ifsc}",
+                    "${account.bankName} · ${account.ifsc}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    account.holderLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = { onSetDestination(account.id) }) {
+            if (isDestination) {
                 Icon(
-                    imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                    contentDescription = "Set as destination",
-                    tint = if (account.isDestination) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    Icons.Default.Star,
+                    contentDescription = "destination",
+                    tint = MaterialTheme.colorScheme.primary
                 )
+            } else {
+                IconButton(onClick = onSetDestination) {
+                    Icon(Icons.Default.StarBorder, contentDescription = "make destination")
+                }
             }
-            IconButton(onClick = { onDelete(account.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete account")
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "delete")
             }
-        }
-        if (account.isDestination) {
-            StatusPill("destination", MaterialTheme.colorScheme.primary)
         }
     }
-}
-
-/** Keeps the first two and last two digits, hides the middle. */
-private fun maskAccount(number: String): String {
-    if (number.length <= 4) return number
-    val hidden = "•".repeat((number.length - 4).coerceIn(2, 8))
-    return number.take(2) + hidden + number.takeLast(2)
 }
