@@ -212,7 +212,12 @@ fun AccountScreen(
                 }
             }
 
-            item { SectionTitle("Registry (${accounts.size})") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Registry (${accounts.size})", modifier = Modifier.weight(1f))
+                    TextButton(onClick = onOpenBanks) { Text("Bank list") }
+                }
+            }
 
             if (accounts.isEmpty()) {
                 item {
@@ -231,20 +236,24 @@ fun AccountScreen(
                             Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "${account.accountNumber} - ${account.ifsc}",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 account.bankName,
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (account.isDestination) {
+                                StatusPill("destination", MaterialTheme.colorScheme.primary)
+                            }
                         }
                         IconButton(onClick = { onSetDestination(account.id) }) {
                             Icon(
                                 if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Mark destination",
-                                tint = MaterialTheme.colorScheme.primary
+                                contentDescription = "Set as destination",
+                                tint = if (account.isDestination) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(onClick = { onDelete(account.id) }) {
@@ -258,14 +267,12 @@ fun AccountScreen(
                 }
             }
 
-            item { SectionTitle("How the harvest works") }
             item {
-                GhostCard {
-                    Text(
-                        "Each account is fingerprinted and written to the dedupe registry before any request leaves, so no account is ever harvested twice. One paisa per account, hard capped. If the rail refuses sub-rupee the leg upgrades to the 100 paise floor and is tagged FLOOR.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                OutlinedButton(
+                    onClick = onOpenTransfer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open the transfer pipeline")
                 }
             }
         }

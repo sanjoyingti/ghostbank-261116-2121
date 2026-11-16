@@ -27,7 +27,7 @@ class AppContainer(context: Context) {
         appContext,
         GhostDatabase::class.java,
         DB_NAME
-    ).fallbackToDestructiveMigration().build()
+    ).fallbackToDestructiveMigration(true).build()
 
     val accountDao: AccountDao get() = database.accountDao()
     val harvestDao: HarvestDao get() = database.harvestDao()

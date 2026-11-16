@@ -5,6 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+
+private val ColorLightPrimaryContainer = Color(0xFFB8EFDD)
+private val ColorLightTertiary = Color(0xFFB07A00)
+private val ColorLightError = Color(0xFFB3261E)
+private val ColorLightOnSurfaceVariant = Color(0xFF3F5249)
 
 private val DarkColors = darkColorScheme(
     primary = DarkPrimary,
@@ -29,27 +35,22 @@ private val DarkColors = darkColorScheme(
 private val LightColors = lightColorScheme(
     primary = LightPrimary,
     onPrimary = LightOnPrimary,
-    primaryContainer = Color_LightPrimaryContainer,
+    primaryContainer = ColorLightPrimaryContainer,
     onPrimaryContainer = LightOnSurface,
     secondary = LightSecondary,
     onSecondary = LightOnPrimary,
-    tertiary = Color_LightTertiary,
+    tertiary = ColorLightTertiary,
     onTertiary = LightOnSurface,
-    error = Color_LightError,
+    error = ColorLightError,
     onError = LightOnPrimary,
     background = LightSurface,
     onBackground = LightOnSurface,
     surface = LightSurface,
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVar,
-    onSurfaceVariant = Color_LightOnSurfaceVar,
+    onSurfaceVariant = ColorLightOnSurfaceVariant,
     outline = LightOutline
 )
-
-private val Color_LightPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFB8EFDD)
-private val Color_LightTertiary = androidx.compose.ui.graphics.Color(0xFFB07A00)
-private val Color_LightError = androidx.compose.ui.graphics.Color(0xFFB3261E)
-private val Color_LightOnSurfaceVar = androidx.compose.ui.graphics.Color(0xFF3F5249)
 
 @Composable
 fun GhostBankTheme(

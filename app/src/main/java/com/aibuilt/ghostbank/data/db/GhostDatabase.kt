@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         VirtualAccountEntity::class
     ],
     version = 1,
-    exportSchema = true
+    exportSchema = false
 )
 abstract class GhostDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao

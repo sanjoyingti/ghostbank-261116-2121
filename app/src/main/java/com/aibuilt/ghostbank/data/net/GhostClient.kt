@@ -8,6 +8,7 @@ import com.aibuilt.ghostbank.data.settings.ProxyEntry
 import com.aibuilt.ghostbank.data.settings.SettingsStore
 import com.aibuilt.ghostbank.model.HopResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -77,6 +78,18 @@ class GhostClient(
         }
     }
 
+    /**
+     * Velocity gate. The lock only reserves a slot (no suspension inside the lock) and the
+     * waiting happens outside it, which is what the coroutines library requires.
+     */
+    private suspend fun gate(cfg: GhostSettings) {
+        while (true) {
+            val waitMs = mutex.withLock { velocity.reserve(cfg) }
+            if (waitMs <= 0L) return
+            delay(waitMs.coerceIn(200L, 5_000L))
+        }
+    }
+
     /** Thrown when the kill-switch blocks a send. */
     class KillSwitchException(message: String) : Exception(message)
 
@@ -96,7 +109,7 @@ class GhostClient(
         if (cfg.killSwitch && !cfg.exitConfigured && cfg.proxyRequired) {
             return@withContext null
         }
-        mutex.withLock { velocity.acquire(cfg) }
+        gate(cfg)
 
         val proxy = proxyFor(cfg)
         val client = baseClient(proxy)
@@ -165,22 +178,21 @@ class GhostClient(
         }
     }
 
-    /** Simple velocity gate so we never exceed the configured requests/minute. */
+    /** Simple velocity window so we never exceed the configured requests/minute. */
     private class VelocityWindow {
         private val stamps = ArrayDeque<Long>()
 
-        suspend fun acquire(cfg: GhostSettings) {
+        /** 0 when the slot is free, otherwise how long the caller must wait. Not suspending. */
+        fun reserve(cfg: GhostSettings): Long {
             val perMinute = cfg.maxRequestsPerMinute.coerceAtLeast(1)
-            while (true) {
-                val now = System.currentTimeMillis()
-                while (stamps.isNotEmpty() && now - stamps.first() > 60_000) stamps.removeFirst()
-                if (stamps.size < perMinute) {
-                    stamps.addLast(now)
-                    return
-                }
-                val wait = 60_000 - (now - stamps.first())
-                kotlinx.coroutines.delay(wait.coerceIn(200, 5_000))
+            val now = System.currentTimeMillis()
+            while (stamps.isNotEmpty() && now - stamps.first() > 60_000L) stamps.removeFirst()
+            if (stamps.size < perMinute) {
+                stamps.addLast(now)
+                return 0L
             }
+            val oldest = stamps.first()
+            return (60_000L - (now - oldest)).coerceAtLeast(1L)
         }
     }
 
@@ -201,8 +213,7 @@ object Padding {
 class HeaderOrderInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val has = original.headers.names()
-        if (!has.contains("User-Agent")) return chain.proceed(original)
+        val userAgent = original.header("User-Agent") ?: return chain.proceed(original)
 
         val builder = original.newBuilder()
         builder.removeHeader("Accept")
@@ -210,26 +221,38 @@ class HeaderOrderInterceptor : Interceptor {
         builder.removeHeader("sec-ch-ua")
         builder.removeHeader("sec-ch-ua-mobile")
         builder.removeHeader("sec-ch-ua-platform")
+        builder.removeHeader("sec-fetch-site")
+        builder.removeHeader("sec-fetch-mode")
+        builder.removeHeader("sec-fetch-dest")
+        builder.removeHeader("User-Agent")
+        builder.removeHeader("Referer")
+        builder.removeHeader("Origin")
+        builder.removeHeader("Content-Type")
+        builder.removeHeader("X-Pad")
 
-        val ordered = buildList {
-            add("User-Agent" to original.header("User-Agent")!!)
-            original.header("sec-ch-ua")?.let { add("sec-ch-ua" to it) }
-            add("sec-ch-ua-mobile" to "?1")
-            original.header("sec-ch-ua-platform")?.let { add("sec-ch-ua-platform" to it) }
-            add("Accept" to (original.header("Accept") ?: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"))
-            add("Accept-Language" to (original.header("Accept-Language") ?: "en-IN,en;q=0.9,en-US;q=0.8"))
-            original.header("Accept-Encoding")?.let { add("Accept-Encoding" to it) }
-            add("sec-fetch-site" to "none")
-            add("sec-fetch-mode" to "navigate")
-            add("sec-fetch-dest" to "document")
-            original.header("Referer")?.let { add("Referer" to it) }
-            original.header("Origin")?.let { add("Origin" to it) }
-            original.header("Content-Type")?.let { add("Content-Type" to it) }
-            original.header("X-Pad")?.let { add("X-Pad" to it) }
-        }
-        val rebuilt = original.newBuilder()
-        ordered.forEach { (k, v) -> rebuilt.addHeader(k, v) }
-        return chain.proceed(rebuilt.build())
+        builder.addHeader("User-Agent", userAgent)
+        original.header("sec-ch-ua")?.let { builder.addHeader("sec-ch-ua", it) }
+        builder.addHeader("sec-ch-ua-mobile", "?1")
+        original.header("sec-ch-ua-platform")?.let { builder.addHeader("sec-ch-ua-platform", it) }
+        builder.addHeader(
+            "Accept",
+            original.header("Accept")
+                ?: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        )
+        builder.addHeader(
+            "Accept-Language",
+            original.header("Accept-Language") ?: "en-IN,en;q=0.9,en-US;q=0.8"
+        )
+        original.header("Accept-Encoding")?.let { builder.addHeader("Accept-Encoding", it) }
+        builder.addHeader("sec-fetch-site", "none")
+        builder.addHeader("sec-fetch-mode", "navigate")
+        builder.addHeader("sec-fetch-dest", "document")
+        original.header("Referer")?.let { builder.addHeader("Referer", it) }
+        original.header("Origin")?.let { builder.addHeader("Origin", it) }
+        original.header("Content-Type")?.let { builder.addHeader("Content-Type", it) }
+        original.header("X-Pad")?.let { builder.addHeader("X-Pad", it) }
+
+        return chain.proceed(builder.build())
     }
 }
 
