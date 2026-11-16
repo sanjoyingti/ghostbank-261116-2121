@@ -33,7 +33,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +50,7 @@ import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.AccountUi
 import com.aibuilt.ghostbank.viewmodel.AccountViewModel
 
+/** Digits are never shown in full: the account number is a masked handle on screen. */
 fun maskAccount(number: String): String =
     if (number.length <= 4) number else "XXXX" + number.takeLast(4)
 
@@ -149,7 +149,7 @@ fun AccountScreen(
                     SectionTitle("Destination")
                     if (destination == null) {
                         Text(
-                            "Nothing marked as destination yet. Add an account and save it as destination — credits land there.",
+                            "Nothing marked as destination yet. Add an account and save it as destination - credits land there.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -204,7 +204,7 @@ fun AccountScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.padding(4.dp))
                             Text(
-                                "  Resolving the IFSC on the live resolver…",
+                                "  Resolving the IFSC on the live resolver...",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -226,84 +226,58 @@ fun AccountScreen(
                 }
             }
 
-            item { SectionTitle("Registry (${accounts.size})") }
+            item { SectionTitle("Saved accounts (${accounts.size})") }
 
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Person,
                         title = "No accounts yet",
-                        subtitle = "Add at least one account. Each account is harvested once, ever."
+                        subtitle = "Add a source account above, or load one from the bank picker."
                     )
                 }
             } else {
                 items(accounts, key = { it.id }) { account ->
-                    GhostAccountRow(
-                        account = account,
-                        isDestination = account.id == destination?.id,
-                        onSetDestination = { onSetDestination(account.id) },
-                        onDelete = { onDelete(account.id) }
-                    )
-                }
-            }
-
-            item { SectionTitle("Bank registry") }
-
-            item {
-                GhostCard {
-                    Text(
-                        "All 27 banks carry their own per-transaction cap. The verified public IFSC resolver is the only route that may confirm a resolve.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open bank picker")
+                    GhostCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    maskAccount(account.accountNumber),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    "${account.bankName} - ${account.ifsc}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (account.holderLabel.isNotBlank()) {
+                                    Text(
+                                        account.holderLabel,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (account.isDestination) {
+                                StatusPill("destination", MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { onSetDestination(account.id) }) {
+                                Icon(
+                                    imageVector = if (account.isDestination) {
+                                        Icons.Default.Star
+                                    } else {
+                                        Icons.Default.StarBorder
+                                    },
+                                    contentDescription = "Set as destination",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            IconButton(onClick = { onDelete(account.id) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            }
+                        }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GhostAccountRow(
-    account: AccountEntity,
-    isDestination: Boolean,
-    onSetDestination: () -> Unit,
-    onDelete: () -> Unit
-) {
-    GhostCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    maskAccount(account.accountNumber),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    "${account.bankName} · ${account.ifsc}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    account.holderLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (isDestination) {
-                Icon(
-                    Icons.Default.Star,
-                    contentDescription = "destination",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                IconButton(onClick = onSetDestination) {
-                    Icon(Icons.Default.StarBorder, contentDescription = "make destination")
-                }
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "delete")
             }
         }
     }

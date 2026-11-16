@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -20,29 +22,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.db.AccountEntity
-import com.aibuilt.ghostbank.data.db.HarvestEntity
-import com.aibuilt.ghostbank.engine.RunState
 import com.aibuilt.ghostbank.model.HarvestState
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.MonoBlock
 import com.aibuilt.ghostbank.ui.components.SectionTitle
+import com.aibuilt.ghostbank.ui.components.StageTimeline
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
+import com.aibuilt.ghostbank.viewmodel.HarvestUi
 import com.aibuilt.ghostbank.viewmodel.HarvestViewModel
 
 @Composable
@@ -52,20 +52,18 @@ fun HarvestRoute(container: AppContainer, onOpenTransfer: () -> Unit) {
     val run by vm.run.collectAsStateWithLifecycle()
     val total by vm.totals.collectAsStateWithLifecycle()
 
-    LaunchedEffect(ui.toast) {
-        if (ui.toast != null) vm.clearToast()
-    }
-
     HarvestScreen(
-        accounts = ui.accounts,
-        harvests = ui.harvests,
-        selected = ui.selected,
-        run = run,
+        ui = ui,
+        running = run.active,
         totalPaise = total,
-        toast = ui.toast,
+        runMessage = run.message,
+        ticks = run.ticks,
+        rawTail = run.rawTail,
+        completed = run.completedLegs,
+        failed = run.failedLegs,
         onToggle = vm::toggle,
         onSelectAll = vm::selectAllUnharvested,
-        onClear = vm::clearSelection,
+        onClearSelection = vm::clearSelection,
         onStart = vm::start,
         onStop = vm::stop,
         onResetHistory = vm::resetHistory,
@@ -75,15 +73,17 @@ fun HarvestRoute(container: AppContainer, onOpenTransfer: () -> Unit) {
 
 @Composable
 fun HarvestScreen(
-    accounts: List<AccountEntity>,
-    harvests: List<HarvestEntity>,
-    selected: Set<Long>,
-    run: RunState,
+    ui: HarvestUi,
+    running: Boolean,
     totalPaise: Long,
-    toast: String?,
+    runMessage: String,
+    ticks: List<com.aibuilt.ghostbank.model.StageTick>,
+    rawTail: List<String>,
+    completed: Int,
+    failed: Int,
     onToggle: (Long) -> Unit,
     onSelectAll: () -> Unit,
-    onClear: () -> Unit,
+    onClearSelection: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onResetHistory: () -> Unit,
@@ -92,6 +92,9 @@ fun HarvestScreen(
     Scaffold(
         topBar = {
             GhostTopBar(title = "Harvest", actions = {
+                IconButton(onClick = onSelectAll) {
+                    Icon(Icons.Default.Checklist, contentDescription = "Select all")
+                }
                 IconButton(onClick = onOpenTransfer) {
                     Icon(Icons.Default.SwapVert, contentDescription = "Transfer")
                 }
@@ -103,78 +106,69 @@ fun HarvestScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Counter")
-                    Text(
-                        "$totalPaise paise harvested in total",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "One paisa per account, once, ever. A bank that refuses sub-rupee is tagged FLOOR at ${paiseLabel(100)} and counted in paise.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionTitle("Micro-harvest ledger")
+                    KeyValue("Total pulled", paiseLabel(totalPaise))
+                    KeyValue("Rule", "1 paisa per account, never twice")
+                    KeyValue("Cap", "Registry written before the request leaves")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onStart,
+                            enabled = !running && ui.selected.isNotEmpty(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Text("  Harvest ${ui.selected.size}")
+                        }
+                        OutlinedButton(onClick = onStop, enabled = running, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Stop, contentDescription = null)
+                            Text("  Stop")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onClearSelection, modifier = Modifier.weight(1f)) {
+                            Text("Clear selection")
+                        }
+                        OutlinedButton(onClick = onResetHistory, modifier = Modifier.weight(1f)) {
+                            Text("Reset history")
+                        }
+                    }
+                    if (runMessage.isNotBlank()) {
+                        Text(runMessage, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (running) {
+                        Text(
+                            "done $completed, failed $failed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
                 }
             }
 
-            toast?.let {
+            if (ticks.isNotEmpty()) {
                 item {
                     GhostCard {
-                        Text(it, color = MaterialTheme.colorScheme.tertiary)
+                        SectionTitle("Pipeline")
+                        StageTimeline(ticks)
                     }
                 }
             }
 
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onStart, enabled = !run.active, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Download, contentDescription = null)
-                        Text("  Harvest")
+            if (rawTail.isNotEmpty()) {
+                item {
+                    GhostCard {
+                        SectionTitle("Raw log")
+                        MonoBlock(rawTail.joinToString("\n"))
                     }
-                    OutlinedButton(onClick = onStop, enabled = run.active, modifier = Modifier.weight(1f)) {
-                        Text("Stop")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onSelectAll) { Text("Select unharvested") }
-                    TextButton(onClick = onClear) { Text("Clear") }
-                    TextButton(onClick = onResetHistory) { Text("Reset history") }
                 }
             }
 
-            item {
-                GhostCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SectionTitle(
-                            "Run ${run.completedLegs}/${run.totalLegs} legs, ${run.failedLegs} failed",
-                            modifier = Modifier.weight(1f)
-                        )
-                        StatusPill(
-                            text = if (run.active) "running" else "idle",
-                            color = if (run.active) MaterialTheme.colorScheme.secondary
-                            else MaterialTheme.colorScheme.outline
-                        )
-                    }
-                    Text(
-                        run.message.ifBlank { "Nothing running." },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    MonoBlock(
-                        if (run.rawTail.isEmpty()) "no traffic yet" else run.rawTail.joinToString("\n"),
-                        maxHeight = 180
-                    )
-                }
-            }
-
-            item { SectionTitle("Accounts (${accounts.size})") }
-
-            if (accounts.isEmpty()) {
+            if (ui.accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Download,
@@ -183,32 +177,45 @@ fun HarvestScreen(
                     )
                 }
             } else {
-                items(accounts, key = { it.id }) { account ->
-                    val last = harvests.firstOrNull { it.accountId == account.id }
+                items(ui.accounts, key = { it.id }) { account ->
+                    val harvest = ui.harvests.firstOrNull { it.accountId == account.id }
                     GhostCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = account.id in selected,
+                                checked = ui.selected.contains(account.id),
                                 onCheckedChange = { onToggle(account.id) }
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     maskAccount(account.accountNumber),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontFamily = FontFamily.Monospace
+                                    style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(
-                                    account.bankName,
+                                    "${account.bankName} - ${account.ifsc}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                last?.let {
+                                harvest?.utr?.let {
                                     Text(
-                                        "${it.state.name} · ${it.amountPaise} paise · utr ${it.utr ?: "-"}",
+                                        "UTR $it",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = statusColor(it.state)
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
+                            }
+                            when (harvest?.state) {
+                                HarvestState.SETTLED, HarvestState.HARVESTED ->
+                                    StatusPill("HARVESTED", MaterialTheme.colorScheme.primary)
+                                HarvestState.FLOOR ->
+                                    StatusPill("FLOOR", MaterialTheme.colorScheme.tertiary)
+                                HarvestState.REJECTED ->
+                                    StatusPill("REJECTED", MaterialTheme.colorScheme.error)
+                                HarvestState.SENT ->
+                                    StatusPill("SENT", MaterialTheme.colorScheme.secondary)
+                                HarvestState.PENDING ->
+                                    StatusPill("PENDING", MaterialTheme.colorScheme.outline)
+                                null ->
+                                    StatusPill("untouched", MaterialTheme.colorScheme.outline)
                             }
                         }
                     }
@@ -216,13 +223,4 @@ fun HarvestScreen(
             }
         }
     }
-}
-
-@Composable
-private fun statusColor(state: HarvestState) = when (state) {
-    HarvestState.SETTLED, HarvestState.HARVESTED -> MaterialTheme.colorScheme.primary
-    HarvestState.FLOOR -> MaterialTheme.colorScheme.tertiary
-    HarvestState.REJECTED -> MaterialTheme.colorScheme.error
-    HarvestState.SENT -> MaterialTheme.colorScheme.secondary
-    HarvestState.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
 }

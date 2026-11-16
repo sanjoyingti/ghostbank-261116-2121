@@ -10,124 +10,103 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.model.LeakFinding
-import com.aibuilt.ghostbank.model.StealthReport
+import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.ghostFactory
+import com.aibuilt.ghostbank.viewmodel.LeakUi
 import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
 
 @Composable
 fun LeakCheckRoute(container: AppContainer, onBack: () -> Unit) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val leak by vm.leak.collectAsStateWithLifecycle()
-
-    LeakCheckScreen(
-        running = leak.running,
-        findings = leak.findings,
-        report = leak.report,
-        onRun = vm::runLeakCheck,
-        onBack = onBack
-    )
+    LeakCheckScreen(ui = leak, onRun = vm::runLeakCheck, onBack = onBack)
 }
 
 @Composable
-fun LeakCheckScreen(
-    running: Boolean,
-    findings: List<LeakFinding>,
-    report: StealthReport?,
-    onRun: () -> Unit,
-    onBack: () -> Unit
-) {
-    Scaffold(topBar = { GhostTopBar(title = "Leak lab", onBack = onBack) }) { padding ->
+fun LeakCheckScreen(ui: LeakUi, onRun: () -> Unit, onBack: () -> Unit) {
+    Scaffold(topBar = { GhostTopBar(title = "Leak check", onBack = onBack) }) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
+                    SectionTitle("Before you run")
                     Text(
-                        "This asks a real echo service what the far end actually sees. Run it before a harvest: if the address is your raw one, the exit is not working.",
+                        "This hits real IP-echo and TLS-fingerprint endpoints so you see exactly what a bank would see.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Button(onClick = onRun, enabled = !running, modifier = Modifier.fillMaxWidth()) {
-                        androidx.compose.material3.Icon(Icons.Default.Science, contentDescription = null)
-                        Text(if (running) "  Probing…" else "  Run leak check")
-                    }
-                    if (running) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.padding(4.dp))
-                            Text("  Asking the echo endpoints…", style = MaterialTheme.typography.bodyMedium)
-                        }
+                    Button(onClick = onRun, enabled = !ui.running, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (ui.running) "Checking..." else "Run leak check")
                     }
                 }
             }
 
-            report?.let { r ->
+            ui.report?.let { report ->
                 item {
                     GhostCard {
-                        SectionTitle("Stealth score ${r.score}/100")
-                        r.reasons.forEach {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        SectionTitle("Stealth score")
+                        KeyValue("Score", "${report.score}/100")
+                        report.reasons.forEach {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
 
-            if (findings.isNotEmpty()) {
-                item { SectionTitle("What still leaks") }
-                items(findings, key = { it.label }) { finding ->
+            if (ui.findings.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Default.BugReport,
+                        title = "No results yet",
+                        subtitle = "Run the check to see the exit IP, TLS fingerprint and timezone skew."
+                    )
+                }
+            } else {
+                items(ui.findings) { finding: LeakFinding ->
                     GhostCard {
                         Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                finding.label,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(finding.label, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    finding.value,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    finding.note,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             StatusPill(
-                                text = if (finding.hidden) "hidden" else "exposed",
-                                color = if (finding.hidden) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.tertiary
-                                }
+                                if (finding.hidden) "HIDDEN" else "EXPOSED",
+                                if (finding.hidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
                             )
                         }
-                        Text(
-                            finding.value,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            finding.note,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }

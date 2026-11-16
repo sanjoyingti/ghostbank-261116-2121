@@ -8,37 +8,38 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
+import com.aibuilt.ghostbank.data.db.VirtualAccountEntity
 import com.aibuilt.ghostbank.data.settings.GhostSettings
-import com.aibuilt.ghostbank.model.StealthLevel
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
+import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.ToggleRow
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
@@ -47,83 +48,74 @@ import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
 fun SettingsRoute(container: AppContainer, onOpenTrace: () -> Unit) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val virtualAccounts by vm.virtualAccounts.collectAsStateWithLifecycle()
 
     SettingsScreen(
         settings = settings,
-        onLevel = vm::setLevel,
-        onTor = vm::setTor,
+        virtualAccounts = virtualAccounts,
+        onProxies = vm::saveProxies,
         onDoh = vm::setDoh,
         onKillSwitch = vm::setKillSwitch,
-        onDiurnal = vm::setDiurnal,
         onWindow = vm::setWindow,
+        onDiurnal = vm::setDiurnal,
         onCaps = vm::setCaps,
-        onCanary = vm::setCanary,
+        onFragmentation = vm::setFragmentation,
         onExactPaisa = vm::setExactPaisa,
-        onProxies = vm::saveProxies,
-        onOpenTrace = onOpenTrace
+        onAddVa = vm::addVirtualAccount,
+        onRemoveVa = vm::removeVirtualAccount,
+        onToggleVa = vm::toggleVirtualAccount,
+        onOpenTrace = onOpenTrace,
+        onClearLogs = vm::clearLogs
     )
 }
 
 @Composable
 fun SettingsScreen(
     settings: GhostSettings,
-    onLevel: (StealthLevel) -> Unit,
-    onTor: (Boolean) -> Unit,
+    virtualAccounts: List<VirtualAccountEntity>,
+    onProxies: (List<String>) -> Unit,
     onDoh: (Boolean) -> Unit,
     onKillSwitch: (Boolean) -> Unit,
-    onDiurnal: (Boolean) -> Unit,
     onWindow: (Int, Int) -> Unit,
+    onDiurnal: (Boolean) -> Unit,
     onCaps: (Int, Int) -> Unit,
-    onCanary: (Boolean) -> Unit,
+    onFragmentation: (Boolean) -> Unit,
     onExactPaisa: (Boolean) -> Unit,
-    onProxies: (List<String>) -> Unit,
-    onOpenTrace: () -> Unit
+    onAddVa: (String, String, String) -> Unit,
+    onRemoveVa: (Long) -> Unit,
+    onToggleVa: (Long, Boolean) -> Unit,
+    onOpenTrace: () -> Unit,
+    onClearLogs: () -> Unit
 ) {
     var proxyText by remember(settings.proxyPool) {
         mutableStateOf(settings.proxyPool.joinToString("\n") { it.raw })
     }
-    var rpm by remember(settings.maxRequestsPerMinute) {
-        mutableFloatStateOf(settings.maxRequestsPerMinute.toFloat())
-    }
-    var aph by remember(settings.maxAccountsPerHour) {
-        mutableFloatStateOf(settings.maxAccountsPerHour.toFloat())
-    }
-    var start by remember(settings.windowStartHour) {
-        mutableFloatStateOf(settings.windowStartHour.toFloat())
-    }
-    var end by remember(settings.windowEndHour) {
-        mutableFloatStateOf(settings.windowEndHour.toFloat())
-    }
+    var vaNumber by remember { mutableStateOf("") }
+    var vaIfsc by remember { mutableStateOf("") }
+    var vaLabel by remember { mutableStateOf("") }
 
-    Scaffold(topBar = { GhostTopBar(title = "Settings") }) { padding ->
+    Scaffold(
+        topBar = {
+            GhostTopBar(title = "Settings", actions = {
+                IconButton(onClick = onOpenTrace) {
+                    Icon(Icons.Default.History, contentDescription = "Trace audit")
+                }
+            })
+        }
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Destination")
-                    Text(
-                        if (settings.destinationAccount.isBlank()) {
-                            "No destination saved. Add an account and mark it as destination."
-                        } else {
-                            "${maskAccount(settings.destinationAccount)} · ${settings.destinationIfsc}"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
                     SectionTitle("Proxy pool")
                     Text(
-                        "One exit per line, http://host:port or socks5://host:port. Tor mode overrides the pool.",
+                        "One exit per line: http://host:port or socks5://host:port. Rotation picks the next entry each call.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -135,62 +127,49 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            onProxies(
-                                proxyText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-                            )
-                        }) {
-                            Icon(Icons.Default.Save, contentDescription = null)
-                            Text("  Save exits")
-                        }
-                        OutlinedButton(onClick = { proxyText = ""; onProxies(emptyList()) }) {
-                            Text("Clear")
-                        }
+                        Button(
+                            onClick = {
+                                onProxies(proxyText.split("\n").map { it.trim() }.filter { it.isNotEmpty() })
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Save exits (${settings.proxyPool.size})") }
+                        OutlinedButton(
+                            onClick = {
+                                proxyText = ""
+                                onProxies(emptyList())
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Clear") }
                     }
-                    ToggleRow(
-                        "Tor mode",
-                        "Uses Orbot's SOCKS5 listener on 127.0.0.1:9050",
-                        settings.torMode,
-                        onTor
-                    )
-                    ToggleRow(
-                        "Kill-switch",
-                        "No exit, no traffic",
-                        settings.killSwitch,
-                        onKillSwitch
-                    )
-                    ToggleRow(
-                        "DNS-over-HTTPS",
-                        "Resolve names over HTTPS",
-                        settings.dohEnabled,
-                        onDoh
-                    )
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Stealth dial")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StealthLevel.entries.forEach { level ->
-                            FilterChip(
-                                selected = settings.stealthLevel == level,
-                                onClick = { onLevel(level) },
-                                label = { Text(level.name) }
-                            )
-                        }
-                    }
+                    SectionTitle("Timing")
                     ToggleRow(
-                        "Canary gate",
-                        "Probe first, pause if blocked",
-                        settings.canaryEnabled,
-                        onCanary
+                        title = "Diurnal window",
+                        subtitle = "Prefer daytime requests",
+                        checked = settings.diurnalWindow,
+                        onChange = onDiurnal
                     )
-                    ToggleRow(
-                        "Exact one paisa",
-                        "Hard-lock the harvest amount to 1 paisa",
-                        settings.exactOnePaisa,
-                        onExactPaisa
+                    Text(
+                        "Window ${settings.windowStartHour}:00 to ${settings.windowEndHour}:00",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text("Start hour", style = MaterialTheme.typography.labelLarge)
+                    Slider(
+                        value = settings.windowStartHour.toFloat(),
+                        onValueChange = { onWindow(it.toInt().coerceIn(0, 23), settings.windowEndHour) },
+                        valueRange = 0f..23f,
+                        steps = 22
+                    )
+                    Text("End hour", style = MaterialTheme.typography.labelLarge)
+                    Slider(
+                        value = settings.windowEndHour.toFloat(),
+                        onValueChange = { onWindow(settings.windowStartHour, it.toInt().coerceIn(0, 23)) },
+                        valueRange = 0f..23f,
+                        steps = 22
                     )
                 }
             }
@@ -198,24 +177,16 @@ fun SettingsScreen(
             item {
                 GhostCard {
                     SectionTitle("Velocity caps")
-                    Text(
-                        "Requests per minute: ${rpm.toInt()}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    KeyValue("Requests / minute", settings.maxRequestsPerMinute.toString())
                     Slider(
-                        value = rpm,
-                        onValueChange = { rpm = it },
-                        onValueChangeFinished = { onCaps(rpm.toInt(), aph.toInt()) },
+                        value = settings.maxRequestsPerMinute.toFloat(),
+                        onValueChange = { onCaps(it.toInt().coerceIn(1, 300), settings.maxAccountsPerHour) },
                         valueRange = 1f..300f
                     )
-                    Text(
-                        "Accounts per hour: ${aph.toInt()}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    KeyValue("Accounts / hour", settings.maxAccountsPerHour.toString())
                     Slider(
-                        value = aph,
-                        onValueChange = { aph = it },
-                        onValueChangeFinished = { onCaps(rpm.toInt(), aph.toInt()) },
+                        value = settings.maxAccountsPerHour.toFloat(),
+                        onValueChange = { onCaps(settings.maxRequestsPerMinute, it.toInt().coerceIn(1, 500)) },
                         valueRange = 1f..500f
                     )
                 }
@@ -223,39 +194,114 @@ fun SettingsScreen(
 
             item {
                 GhostCard {
-                    SectionTitle("Diurnal window")
+                    SectionTitle("Money rules")
                     ToggleRow(
-                        "Shape timing by the clock",
-                        "Waits stretch at night",
-                        settings.diurnalWindow,
-                        onDiurnal
+                        title = "Exact 1 paisa",
+                        subtitle = "Hard cap so the amount can never drift",
+                        checked = settings.exactOnePaisa,
+                        onChange = onExactPaisa
                     )
-                    Text("From ${start.toInt()}:00", style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = start,
-                        onValueChange = { start = it },
-                        onValueChangeFinished = { onWindow(start.toInt(), end.toInt()) },
-                        valueRange = 0f..23f
+                    ToggleRow(
+                        title = "Amount fragmentation",
+                        subtitle = "Split larger pulls across virtual accounts",
+                        checked = settings.fragmentation,
+                        onChange = onFragmentation
                     )
-                    Text("To ${end.toInt()}:00", style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = end,
-                        onValueChange = { end = it },
-                        onValueChangeFinished = { onWindow(start.toInt(), end.toInt()) },
-                        valueRange = 1f..24f
+                    ToggleRow(
+                        title = "DNS over HTTPS",
+                        subtitle = "Resolve names inside the tunnel",
+                        checked = settings.dohEnabled,
+                        onChange = onDoh
+                    )
+                    ToggleRow(
+                        title = "Kill-switch",
+                        subtitle = "Never send on the raw IP",
+                        checked = settings.killSwitch,
+                        onChange = onKillSwitch
                     )
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Diagnosis")
-                    OutlinedButton(onClick = onOpenTrace, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Timeline, contentDescription = null)
-                        Text("  Open trace audit")
+                    SectionTitle("Virtual destination accounts (${virtualAccounts.size})")
+                    Text(
+                        "Credits can land on a rotating virtual account so your real digits stop being the pattern.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = vaNumber,
+                        onValueChange = { vaNumber = it.filter { c -> c.isDigit() }.take(18) },
+                        label = { Text("Virtual account number") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = vaIfsc,
+                        onValueChange = { vaIfsc = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(11) },
+                        label = { Text("IFSC") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = vaLabel,
+                        onValueChange = { vaLabel = it.take(30) },
+                        label = { Text("Label (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            onAddVa(vaNumber, vaIfsc, vaLabel)
+                            vaNumber = ""
+                            vaIfsc = ""
+                            vaLabel = ""
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("  Add virtual account")
+                    }
+                }
+            }
+
+            items(virtualAccounts, key = { it.id }) { va ->
+                GhostCard {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(maskAccount(va.accountNumber), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${va.bankCode} - ${va.ifsc} - used ${va.uses}x",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        StatusPill(
+                            if (va.active) "ACTIVE" else "OFF",
+                            if (va.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        )
+                        TextButton(onClick = { onToggleVa(va.id, !va.active) }) { Text("flip") }
+                        IconButton(onClick = { onRemoveVa(va.id) }) {
+                            Icon(Icons.Default.Policy, contentDescription = "Remove virtual account")
+                        }
+                    }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Maintenance")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onOpenTrace, modifier = Modifier.weight(1f)) {
+                            Text("Trace audit")
+                        }
+                        OutlinedButton(onClick = onClearLogs, modifier = Modifier.weight(1f)) {
+                            Text("Clear raw logs")
+                        }
                     }
                     Text(
-                        "No analytics, no cloud, no telemetry SDK. The ledger and the log stay on this device.",
+                        "Everything is on-device: no analytics, no cloud, no third-party SDK.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

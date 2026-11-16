@@ -3,21 +3,35 @@ package com.aibuilt.ghostbank.data.db
 import androidx.room.TypeConverter
 import com.aibuilt.ghostbank.model.HarvestState
 import com.aibuilt.ghostbank.model.LedgerDirection
+import com.aibuilt.ghostbank.model.StealthLevel
 
-/** Room cannot store enums directly, so they are written as their stable names. */
+/** Room cannot store enums by itself; these keep the exact status names in the tables. */
 class Converters {
 
     @TypeConverter
-    fun harvestStateToString(value: HarvestState): String = value.name
+    fun toHarvestState(value: String?): HarvestState? {
+        if (value == null) return null
+        return runCatching { HarvestState.valueOf(value) }.getOrNull()
+    }
 
     @TypeConverter
-    fun stringToHarvestState(value: String): HarvestState =
-        runCatching { HarvestState.valueOf(value) }.getOrDefault(HarvestState.PENDING)
+    fun fromHarvestState(value: HarvestState?): String? = value?.name
 
     @TypeConverter
-    fun directionToString(value: LedgerDirection): String = value.name
+    fun toDirection(value: String?): LedgerDirection? {
+        if (value == null) return null
+        return runCatching { LedgerDirection.valueOf(value) }.getOrNull()
+    }
 
     @TypeConverter
-    fun stringToDirection(value: String): LedgerDirection =
-        runCatching { LedgerDirection.valueOf(value) }.getOrDefault(LedgerDirection.DEBIT)
+    fun fromDirection(value: LedgerDirection?): String? = value?.name
+
+    @TypeConverter
+    fun toLevel(value: String?): StealthLevel? {
+        if (value == null) return null
+        return runCatching { StealthLevel.valueOf(value) }.getOrNull()
+    }
+
+    @TypeConverter
+    fun fromLevel(value: StealthLevel?): String? = value?.name
 }

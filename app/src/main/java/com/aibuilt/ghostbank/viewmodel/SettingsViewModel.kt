@@ -3,7 +3,9 @@ package com.aibuilt.ghostbank.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aibuilt.ghostbank.data.AppContainer
+import com.aibuilt.ghostbank.data.BankRegistry
 import com.aibuilt.ghostbank.data.db.HostLogEntity
+import com.aibuilt.ghostbank.data.db.VirtualAccountEntity
 import com.aibuilt.ghostbank.data.settings.GhostSettings
 import com.aibuilt.ghostbank.data.stealth.GhostProfileFactory
 import com.aibuilt.ghostbank.model.CanaryOutcome
@@ -40,6 +42,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val canary: StateFlow<CanaryUi> = _canary.asStateFlow()
 
     val hostLog: StateFlow<List<HostLogEntity>> = container.hostLogDao.observeRecent()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val virtualAccounts: StateFlow<List<VirtualAccountEntity>> = container.virtualAccountDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val levels = StealthLevel.entries
@@ -94,4 +99,29 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun clearLogs() = viewModelScope.launch { container.hostLogDao.clearAll() }
+
+    fun addVirtualAccount(number: String, ifsc: String, label: String) {
+        val cleanIfsc = ifsc.trim().uppercase()
+        val bank = BankRegistry.byIfscPrefix(cleanIfsc)
+        val valid = number.length >= 9 && Regex("^[A-Z]{4}0[A-Z0-9]{6}$").matches(cleanIfsc) && bank != null
+        if (!valid) return
+        viewModelScope.launch {
+            container.virtualAccountDao.insert(
+                VirtualAccountEntity(
+                    accountNumber = number,
+                    ifsc = cleanIfsc,
+                    bankCode = bank.code,
+                    label = label.ifBlank { "VA ending ${number.takeLast(4)}" }
+                )
+            )
+        }
+    }
+
+    fun removeVirtualAccount(id: Long) {
+        viewModelScope.launch { container.virtualAccountDao.delete(id) }
+    }
+
+    fun toggleVirtualAccount(id: Long, active: Boolean) {
+        viewModelScope.launch { container.virtualAccountDao.setActive(id, active) }
+    }
 }

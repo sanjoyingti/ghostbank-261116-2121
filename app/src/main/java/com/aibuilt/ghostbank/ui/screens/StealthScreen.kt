@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -25,13 +25,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.data.settings.GhostSettings
+import com.aibuilt.ghostbank.model.CanaryOutcome
 import com.aibuilt.ghostbank.model.StealthLevel
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.ToggleRow
 import com.aibuilt.ghostbank.ui.ghostFactory
+import com.aibuilt.ghostbank.viewmodel.CanaryUi
 import com.aibuilt.ghostbank.viewmodel.SettingsViewModel
 
 @Composable
@@ -42,21 +45,22 @@ fun StealthRoute(
 ) {
     val vm: SettingsViewModel = viewModel(factory = ghostFactory { SettingsViewModel(container) })
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val canary by vm.canary.collectAsStateWithLifecycle()
 
     StealthScreen(
         settings = settings,
+        canary = canary,
         onLevel = vm::setLevel,
         onTor = vm::setTor,
         onDoh = vm::setDoh,
         onKillSwitch = vm::setKillSwitch,
-        onDiurnal = vm::setDiurnal,
+        onGeo = vm::setGeo,
         onDecoy = vm::setDecoy,
         onIdle = vm::setGhostIdle,
-        onFragmentation = vm::setFragmentation,
-        onCanary = vm::setCanary,
         onPadding = vm::setPadding,
-        onGeo = vm::setGeo,
-        onScore = vm::score,
+        onDiurnal = vm::setDiurnal,
+        onCanaryToggle = vm::setCanary,
+        onRunCanary = vm::runCanary,
         onOpenLeak = onOpenLeak,
         onOpenTrace = onOpenTrace
     )
@@ -65,18 +69,18 @@ fun StealthRoute(
 @Composable
 fun StealthScreen(
     settings: GhostSettings,
+    canary: CanaryUi,
     onLevel: (StealthLevel) -> Unit,
     onTor: (Boolean) -> Unit,
     onDoh: (Boolean) -> Unit,
     onKillSwitch: (Boolean) -> Unit,
-    onDiurnal: (Boolean) -> Unit,
+    onGeo: (Boolean) -> Unit,
     onDecoy: (Boolean) -> Unit,
     onIdle: (Boolean) -> Unit,
-    onFragmentation: (Boolean) -> Unit,
-    onCanary: (Boolean) -> Unit,
     onPadding: (Boolean) -> Unit,
-    onGeo: (Boolean) -> Unit,
-    onScore: () -> Unit,
+    onDiurnal: (Boolean) -> Unit,
+    onCanaryToggle: (Boolean) -> Unit,
+    onRunCanary: () -> Unit,
     onOpenLeak: () -> Unit,
     onOpenTrace: () -> Unit
 ) {
@@ -86,12 +90,12 @@ fun StealthScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Dial")
+                    SectionTitle("Stealth level")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StealthLevel.entries.forEach { level ->
                             FilterChip(
@@ -102,111 +106,11 @@ fun StealthScreen(
                         }
                     }
                     Text(
-                        if (settings.exitConfigured) {
-                            "An exit is configured, so the run can start."
+                        if (settings.stealthLevel == StealthLevel.GHOST) {
+                            "Ghost is proxy-mandatory: nothing leaves on your raw IP."
                         } else {
-                            "No exit configured. The kill-switch holds every request rather than leak the raw IP."
+                            "Higher levels add decoys, idling and stricter caps."
                         },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (settings.exitConfigured) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        }
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Tunnel")
-                    ToggleRow(
-                        "Tor mode",
-                        "Routes every exchange through Orbot on port 9050",
-                        settings.torMode,
-                        onTor
-                    )
-                    ToggleRow(
-                        "DNS-over-HTTPS",
-                        "Names resolve over HTTPS so the ISP resolver never sees bank hosts",
-                        settings.dohEnabled,
-                        onDoh
-                    )
-                    ToggleRow(
-                        "Kill-switch",
-                        "Abandon rather than send on the raw IP when no exit answers",
-                        settings.killSwitch,
-                        onKillSwitch
-                    )
-                    ToggleRow(
-                        "Geo-matched exit",
-                        "Re-pick an exit whose country and timezone match the target banks",
-                        settings.geoMatch,
-                        onGeo
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Timing")
-                    ToggleRow(
-                        "Diurnal window",
-                        "Slow at night, faster in banking hours (${settings.windowStartHour}:00-${settings.windowEndHour}:00)",
-                        settings.diurnalWindow,
-                        onDiurnal
-                    )
-                    ToggleRow(
-                        "Poisson jitter",
-                        "Always on: gaps cluster like a person instead of a metronome",
-                        true,
-                        {}
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Cover traffic")
-                    ToggleRow(
-                        "Decoy browsing",
-                        "Load an unrelated bank page before a leg so the burst is not only the endpoint",
-                        settings.decoyBrowsing,
-                        onDecoy
-                    )
-                    ToggleRow(
-                        "Ghost idle",
-                        "1-3 junk keep-alives after settling, then a clean close",
-                        settings.ghostIdle,
-                        onIdle
-                    )
-                    ToggleRow(
-                        "Amount fragmentation",
-                        "Splits a pull into random legs across rotating destination handles",
-                        settings.fragmentation,
-                        onFragmentation
-                    )
-                    ToggleRow(
-                        "Traffic padding",
-                        "Random padding and encoding negotiation on every request",
-                        settings.padding,
-                        onPadding
-                    )
-                    ToggleRow(
-                        "Canary gate",
-                        "Innocuous GET first; a blocked canary pauses the run",
-                        settings.canaryEnabled,
-                        onCanary
-                    )
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Honest limits")
-                    StatusPill("amber is physical", MaterialTheme.colorScheme.tertiary)
-                    Text(
-                        "Your own bank always knows your account number - it is in their ledger. The phone's TCP/IP stack is Android's. What the app can do is mask the exit and one-use the identity, and it says so on the trace screen.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -214,20 +118,120 @@ fun StealthScreen(
             }
 
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onOpenLeak, modifier = Modifier.weight(1f)) {
-                        androidx.compose.material3.Icon(Icons.Default.Science, contentDescription = null)
-                        Text("  Leak lab")
+                GhostCard {
+                    SectionTitle("Transport")
+                    ToggleRow(
+                        title = "Tor mode",
+                        subtitle = "Routes through Orbot's SOCKS5 listener on 127.0.0.1:9050",
+                        checked = settings.torMode,
+                        onChange = onTor
+                    )
+                    ToggleRow(
+                        title = "DNS over HTTPS",
+                        subtitle = "Keeps the ISP resolver from seeing bank hostnames",
+                        checked = settings.dohEnabled,
+                        onChange = onDoh
+                    )
+                    ToggleRow(
+                        title = "Kill-switch",
+                        subtitle = "Abandon any request that has no exit",
+                        checked = settings.killSwitch,
+                        onChange = onKillSwitch
+                    )
+                    ToggleRow(
+                        title = "Geo-matched exit",
+                        subtitle = "Prefer exits whose country matches the target banks",
+                        checked = settings.geoMatch,
+                        onChange = onGeo
+                    )
+                    KeyValue("Exits configured", settings.proxyPool.size.toString())
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Traffic shape")
+                    ToggleRow(
+                        title = "Decoy browsing",
+                        subtitle = "Unrelated bank homepage loaded before each leg",
+                        checked = settings.decoyBrowsing,
+                        onChange = onDecoy
+                    )
+                    ToggleRow(
+                        title = "Ghost idle",
+                        subtitle = "A few idle keep-alives after settling, then a clean close",
+                        checked = settings.ghostIdle,
+                        onChange = onIdle
+                    )
+                    ToggleRow(
+                        title = "Header padding",
+                        subtitle = "Random padding so request sizes vary",
+                        checked = settings.padding,
+                        onChange = onPadding
+                    )
+                    ToggleRow(
+                        title = "Diurnal window",
+                        subtitle = "Slower outside ${settings.windowStartHour}:00-${settings.windowEndHour}:00",
+                        checked = settings.diurnalWindow,
+                        onChange = onDiurnal
+                    )
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Detection watch")
+                    ToggleRow(
+                        title = "Canary gate",
+                        subtitle = "Innocuous homepage GET first; a blocked canary stops the run",
+                        checked = settings.canaryEnabled,
+                        onChange = onCanaryToggle
+                    )
+                    Button(onClick = onRunCanary, enabled = !canary.running, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (canary.running) "Probing..." else "Run canary probe now")
                     }
-                    OutlinedButton(onClick = onOpenTrace, modifier = Modifier.weight(1f)) {
-                        androidx.compose.material3.Icon(Icons.Default.Timeline, contentDescription = null)
-                        Text("  Trace audit")
+                    canary.outcome?.let { outcome -> CanaryResult(outcome) }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Trace shield")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onOpenLeak, modifier = Modifier.weight(1f)) {
+                            Text("Leak check")
+                        }
+                        OutlinedButton(onClick = onOpenTrace, modifier = Modifier.weight(1f)) {
+                            Text("Trace audit")
+                        }
                     }
                 }
-                OutlinedButton(onClick = onScore, modifier = Modifier.fillMaxWidth()) {
-                    Text("Recalculate stealth score")
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("What still leaks")
+                    KeyValue("Your account number", "always known to your own bank")
+                    KeyValue("Your IP", if (settings.exitConfigured) "hidden behind the exit" else "exposed - no exit")
+                    KeyValue("Cookies between runs", "none, ephemeral sessions")
+                    KeyValue("App signature", "none, no custom headers or telemetry")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CanaryResult(outcome: CanaryOutcome) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        StatusPill(
+            if (outcome.alive) "ALIVE" else "DEAD",
+            if (outcome.alive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+        )
+        Text(
+            "${outcome.detail} (hops ${outcome.hops})",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
