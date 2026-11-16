@@ -1,7 +1,6 @@
 package com.aibuilt.ghostbank.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,9 +18,9 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -188,92 +187,81 @@ fun AccountScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onSave, enabled = !ui.busy, modifier = Modifier.weight(1f)) {
-                            Text("Check and save")
-                        }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = onSave,
+                            enabled = !ui.busy,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Add account") }
                         OutlinedButton(
                             onClick = onSaveAsDestination,
                             enabled = !ui.busy,
                             modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Save as dest.")
-                        }
+                        ) { Text("Add as destination") }
                     }
                     if (ui.busy) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.padding(4.dp))
-                            Text(
-                                "  Resolving the IFSC on the live resolver...",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "Resolving IFSC on the live resolver...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     ui.error?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                     ui.info?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
 
-            item { SectionTitle("Saved accounts (${accounts.size})") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Registry")
+                    StatusPill("${accounts.size} saved")
+                }
+            }
 
             if (accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Person,
                         title = "No accounts yet",
-                        subtitle = "Add a source account above, or load one from the bank picker."
+                        subtitle = "Add the account you want to harvest from, and one destination to collect into."
                     )
                 }
             } else {
-                items(accounts, key = { it.id }) { account ->
+                items(accounts) { account ->
                     GhostCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    maskAccount(account.accountNumber),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "${account.bankName} - ${account.ifsc}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (account.holderLabel.isNotBlank()) {
-                                    Text(
-                                        account.holderLabel,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            if (account.isDestination) {
-                                StatusPill("destination", MaterialTheme.colorScheme.primary)
-                            }
-                            IconButton(onClick = { onSetDestination(account.id) }) {
+                            SectionTitle(account.holderLabel)
+                            StatusPill(
+                                if (account.isDestination) "destination" else account.bankCode,
+                                if (account.isDestination) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        KeyValue("Account", maskAccount(account.accountNumber))
+                        KeyValue("IFSC", account.ifsc)
+                        KeyValue("Bank", account.bankName)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { onSetDestination(account.id) },
+                                enabled = !account.isDestination
+                            ) {
                                 Icon(
-                                    imageVector = if (account.isDestination) {
-                                        Icons.Default.Star
-                                    } else {
-                                        Icons.Default.StarBorder
-                                    },
-                                    contentDescription = "Set as destination",
-                                    tint = MaterialTheme.colorScheme.primary
+                                    if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = null
                                 )
+                                Text(" Make destination")
                             }
-                            IconButton(onClick = { onDelete(account.id) }) {
+                            OutlinedButton(onClick = { onDelete(account.id) }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                Text(" Remove")
                             }
                         }
                     }

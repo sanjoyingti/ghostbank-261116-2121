@@ -2,7 +2,6 @@ package com.aibuilt.ghostbank.ui.screens
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,12 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,12 +25,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.db.LedgerEntity
 import com.aibuilt.ghostbank.model.LedgerDirection
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
+import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
@@ -51,59 +47,32 @@ fun LedgerRoute(container: AppContainer) {
     val credited by vm.creditedPaise.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val fmt = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
 
-    LedgerScreen(
-        rows = rows,
-        creditedPaise = credited,
-        onExport = {
-            scope.launch {
-                vm.export(context)?.let { intent ->
-                    context.startActivity(Intent.createChooser(intent, "Export ledger"))
-                }
-            }
-        },
-        onClear = vm::clear
-    )
-}
-
-@Composable
-fun LedgerScreen(
-    rows: List<LedgerEntity>,
-    creditedPaise: Long,
-    onExport: () -> Unit,
-    onClear: () -> Unit
-) {
-    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.getDefault())
-
-    Scaffold(
-        topBar = {
-            GhostTopBar(title = "Ledger", actions = {
-                IconButton(onClick = onExport) {
-                    Icon(Icons.Default.IosShare, contentDescription = "Export CSV")
-                }
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.DeleteSweep, contentDescription = "Clear ledger")
-                }
-            })
-        }
-    ) { padding ->
+    Scaffold(topBar = { GhostTopBar(title = "Ledger") }) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    KeyValue("Credited total", paiseLabel(creditedPaise))
-                    KeyValue("Rows", rows.size.toString())
-                    Text(
-                        "Exact paise are kept as integers, so nothing is rounded away.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionTitle("Credited into the destination")
+                    KeyValue("Total", "${paiseLabel(credited)} ($credited paise)", MaterialTheme.colorScheme.primary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    val intent = vm.export(context)
+                                    if (intent != null) {
+                                        context.startActivity(Intent.createChooser(intent, "Export ledger"))
+                                    }
+                                }
+                            },
+                            enabled = rows.isNotEmpty()
+                        ) { Text("Export CSV") }
+                        OutlinedButton(onClick = vm::clear, enabled = rows.isNotEmpty()) { Text("Clear") }
+                    }
                 }
             }
 
@@ -111,46 +80,26 @@ fun LedgerScreen(
                 item {
                     EmptyState(
                         icon = Icons.Default.ReceiptLong,
-                        title = "Nothing booked yet",
-                        subtitle = "A row appears only when a settled UTR comes back."
+                        title = "No bookings yet",
+                        subtitle = "Only a confirmed UTR lands here - nothing is faked."
                     )
                 }
             } else {
-                items(rows, key = { it.id }) { row ->
+                items(rows) { row ->
                     GhostCard {
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "${row.direction.name} ${paiseLabel(row.amountPaise)}",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "${row.bankName} - ${fmt.format(Date(row.bookedAt))}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    row.note,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                row.utr?.let {
-                                    Text(
-                                        "UTR $it",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SectionTitle(if (row.direction == LedgerDirection.DEBIT) "Debit" else "Credit")
                             StatusPill(
-                                row.direction.name,
-                                if (row.direction == LedgerDirection.CREDIT) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.secondary
-                                }
+                                if (row.direction == LedgerDirection.DEBIT) "out" else "in",
+                                if (row.direction == LedgerDirection.CREDIT) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.secondary
                             )
                         }
+                        KeyValue("Amount", "${paiseLabel(row.amountPaise)} (${row.amountPaise} paise)")
+                        KeyValue("Bank", row.bankName)
+                        KeyValue("UTR", row.utr ?: "-")
+                        KeyValue("When", fmt.format(Date(row.bookedAt)))
+                        Text(row.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
