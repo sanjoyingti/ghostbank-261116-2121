@@ -64,7 +64,7 @@ fun GhostBankRoot(container: AppContainer) {
 
     Scaffold(
         bottomBar = {
-            if (currentRoute in tabs.map { it.route }) {
+            if (tabs.any { it.route == currentRoute }) {
                 NavigationBar {
                     tabs.forEach { tab ->
                         NavigationBarItem(

@@ -4,20 +4,24 @@ import androidx.room.TypeConverter
 import com.aibuilt.ghostbank.model.HarvestState
 import com.aibuilt.ghostbank.model.LedgerDirection
 
-/** Stores the two enums as their names so SQL can compare them as plain text. */
+/**
+ * The database cannot store Kotlin enums directly, but GhostDatabase was already built with
+ * @@TypeConverters(Converters::class). These two converters turn the harvest state and the ledger
+ * direction into their names on disk and back again.
+ */
 class Converters {
 
     @TypeConverter
-    fun fromHarvestState(value: HarvestState?): String? = value?.name
-
-    @TypeConverter
     fun toHarvestState(value: String?): HarvestState? =
-        value?.let { runCatching { HarvestState.valueOf(it) }.getOrNull() }
+        value?.let { stored -> runCatching { HarvestState.valueOf(stored) }.getOrNull() }
 
     @TypeConverter
-    fun fromDirection(value: LedgerDirection?): String? = value?.name
+    fun fromHarvestState(state: HarvestState?): String? = state?.name
 
     @TypeConverter
     fun toDirection(value: String?): LedgerDirection? =
-        value?.let { runCatching { LedgerDirection.valueOf(it) }.getOrNull() }
+        value?.let { stored -> runCatching { LedgerDirection.valueOf(stored) }.getOrNull() }
+
+    @TypeConverter
+    fun fromDirection(direction: LedgerDirection?): String? = direction?.name
 }

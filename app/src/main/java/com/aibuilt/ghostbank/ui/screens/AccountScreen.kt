@@ -150,7 +150,7 @@ fun AccountScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        KeyValue("Account", destination.accountNumber)
+                        KeyValue("Account", maskAccount(destination.accountNumber))
                         KeyValue("IFSC", destination.ifsc)
                         KeyValue("Bank", destination.bankName)
                         StatusPill("credits land here", MaterialTheme.colorScheme.primary)
@@ -221,45 +221,67 @@ fun AccountScreen(
                     EmptyState(
                         icon = Icons.Default.AccountBalance,
                         title = "No accounts yet",
-                        subtitle = "Add one above, or open the bank picker to prefill its IFSC prefix."
+                        subtitle = "Add the accounts you want to harvest, or save your own account as the destination."
                     )
                 }
-            }
-
-            items(accounts, key = { it.id }) { account ->
-                GhostCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = account.holderLabel,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = account.accountNumber,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = "${account.bankName} - ${account.ifsc}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (account.isDestination) {
-                                StatusPill("destination", MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        IconButton(onClick = { onSetDestination(account.id) }) {
-                            Icon(
-                                imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Mark as destination"
-                            )
-                        }
-                        IconButton(onClick = { onDelete(account.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete account")
-                        }
-                    }
+            } else {
+                items(accounts, key = { it.id }) { account ->
+                    AccountRow(
+                        account = account,
+                        onSetDestination = onSetDestination,
+                        onDelete = onDelete
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AccountRow(
+    account: AccountEntity,
+    onSetDestination: (Long) -> Unit,
+    onDelete: (Long) -> Unit
+) {
+    GhostCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = maskAccount(account.accountNumber),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "${account.bankName} - ${account.ifsc}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { onSetDestination(account.id) }) {
+                Icon(
+                    imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Set as destination",
+                    tint = if (account.isDestination) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            IconButton(onClick = { onDelete(account.id) }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete account")
+            }
+        }
+        if (account.isDestination) {
+            StatusPill("destination", MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+/** Keeps the first two and last two digits, hides the middle. */
+private fun maskAccount(number: String): String {
+    if (number.length <= 4) return number
+    val hidden = "•".repeat((number.length - 4).coerceIn(2, 8))
+    return number.take(2) + hidden + number.takeLast(2)
 }
