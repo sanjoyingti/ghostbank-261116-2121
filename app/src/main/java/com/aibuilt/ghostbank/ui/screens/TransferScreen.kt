@@ -4,66 +4,84 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.BankRegistry
+import com.aibuilt.ghostbank.data.settings.GhostSettings
+import com.aibuilt.ghostbank.engine.RunState
+import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.MonoBlock
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StageTimeline
 import com.aibuilt.ghostbank.ui.components.StatusPill
-import kotlinx.coroutines.launch
+import com.aibuilt.ghostbank.ui.components.paiseLabel
+import com.aibuilt.ghostbank.ui.ghostFactory
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SwapVert
+import com.aibuilt.ghostbank.viewmodel.TransferUi
+import com.aibuilt.ghostbank.viewmodel.TransferViewModel
 
 @Composable
 fun TransferRoute(container: AppContainer, onBack: () -> Unit) {
-    val accounts by remember { container.accountDao.observeAll() }
-        .collectAsStateWithLifecycle(initialValue = emptyList())
-    val run by container.harvestEngine.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
+    val vm: TransferViewModel = viewModel(factory = ghostFactory { TransferViewModel(container) })
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val run by vm.run.collectAsStateWithLifecycle()
+    val settings by container.settingsStore.settings.collectAsStateWithLifecycle(GhostSettings())
 
-    var selectedId by remember { mutableStateOf<Long?>(null) }
-    var amountText by remember { mutableStateOf("1.00") }
-    var error by remember { mutableStateOf<String?>(null) }
+    TransferScreen(
+        ui = ui,
+        run = run,
+        settings = settings,
+        onAmount = vm::setAmount,
+        onToggle = vm::toggle,
+        onSelectAll = vm::selectAll,
+        onClear = vm::clearSelection,
+        onStart = vm::start,
+        onStop = vm::stop,
+        onBack = onBack
+    )
+}
 
-    fun start() {
-        val id = selectedId ?: run { error = "Pick an account first"; return }
-        val paise = parseRupeesToPaise(amountText)
-        if (paise == null || paise <= 0L) {
-            error = "Amount must be a positive rupee value like 1 or 12.50"
-            return
-        }
-        val account = accounts.firstOrNull { it.id == id }
-        val cap = BankRegistry.byCode(account?.bankCode ?: "")?.perTxCapPaise
-        if (cap != null && paise > cap) {
-            error = "Above this bank's per-transfer cap of ${cap / 100} rupees"
-            return
-        }
-        error = null
-        scope.launch { container.harvestEngine.harvest(listOf(id), paise) }
-    }
-
+@Composable
+fun TransferScreen(
+    ui: TransferUi,
+    run: RunState,
+    settings: GhostSettings,
+    onAmount: (String) -> Unit,
+    onToggle: (Long) -> Unit,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onBack: () -> Unit
+) {
     Scaffold(topBar = { GhostTopBar(title = "Transfer", onBack = onBack) }) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -75,101 +93,132 @@ fun TransferRoute(container: AppContainer, onBack: () -> Unit) {
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Amount")
+                    SectionTitle("Leg")
+                    KeyValue("Rail", "IMPS P2A")
+                    KeyValue("Destination", settings.destinationAccount.ifBlank { "not set" })
+                    KeyValue("Destination IFSC", settings.destinationIfsc.ifBlank { "not set" })
+                    if (settings.destinationAccount.isBlank()) {
+                        Text(
+                            "No destination saved. Mark one on the Account screen or credits fall back to the source IFSC.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Amount in paise")
                     OutlinedTextField(
-                        value = amountText,
-                        onValueChange = {
-                            amountText = it.filter { c -> c.isDigit() || c == '.' }.take(12)
-                        },
-                        label = { Text("Rupees (kept exactly in paise)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        value = ui.amountPaiseText,
+                        onValueChange = onAmount,
+                        label = { Text("Paise (1 = one paisa)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    error?.let {
+                    Text(
+                        "= ${paiseLabel(ui.amountPaiseText.toLongOrNull() ?: 0L)}. Sub-rupee is sent exactly; if the rail refuses it the leg floors to 100 paise and is tagged FLOOR.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = onAmount.let { { onAmount("1") } }) { Text("Reset to 1 paisa") }
+                    ui.error?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
 
-            item { SectionTitle("Source account") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Sources (${ui.selected.size})")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onSelectAll) { Text("All") }
+                    TextButton(onClick = onClear) { Text("None") }
+                }
+            }
 
-            if (accounts.isEmpty()) {
+            if (ui.accounts.isEmpty()) {
                 item {
-                    Text(
-                        "No accounts yet. Add one on the Account tab first.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    EmptyState(
+                        icon = Icons.Default.SwapVert,
+                        title = "No source accounts",
+                        subtitle = "Add accounts first, then come back to move money."
                     )
                 }
             }
 
-            items(accounts, key = { it.id }) { account ->
-                val picked = account.id == selectedId
-                GhostCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(ui.accounts, key = { it.id }) { account ->
+                GhostCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = ui.selected.contains(account.id),
+                            onCheckedChange = { onToggle(account.id) }
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "${account.bankName} - ${account.ifsc}",
                                 style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (picked) StatusPill("selected", MaterialTheme.colorScheme.primary)
                     }
-                    OutlinedButton(onClick = { selectedId = account.id }) { Text("Use this") }
                 }
             }
 
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (run.active) {
+                    OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
+                        Text("Stop run")
+                    }
+                } else {
                     Button(
-                        onClick = { start() },
-                        enabled = !run.active,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Run pipeline") }
-                    OutlinedButton(
-                        onClick = { container.harvestEngine.stop() },
-                        enabled = run.active,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Stop") }
+                        onClick = onStart,
+                        enabled = ui.selected.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Run pipeline")
+                    }
                 }
             }
 
             item {
                 GhostCard {
-                    SectionTitle("Pipeline")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionTitle("Pipeline")
+                        Spacer(Modifier.width(8.dp))
+                        StatusPill(
+                            if (run.active) "running" else "idle",
+                            if (run.active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    StageTimeline(run.ticks)
+                    if (run.message.isNotBlank()) {
+                        Text(
+                            run.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
-                        run.message.ifBlank { "Idle. Stages tick only when the far end confirms." },
-                        style = MaterialTheme.typography.bodyMedium,
+                        "done ${run.completedLegs}/${run.totalLegs} - failed ${run.failedLegs}",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    StageTimeline(run.ticks)
                 }
             }
 
-            item {
-                GhostCard {
-                    SectionTitle("Raw log")
-                    MonoBlock(
-                        text = if (run.rawTail.isEmpty()) "nothing yet" else run.rawTail.joinToString("\n"),
-                        maxHeight = 260
-                    )
+            if (run.rawTail.isNotEmpty()) {
+                item {
+                    GhostCard {
+                        SectionTitle("Raw log")
+                        MonoBlock(run.rawTail.joinToString("\n"))
+                    }
                 }
             }
         }
     }
-}
-
-/** "12.5" -> 1250 paise. Null when it cannot be parsed. */
-internal fun parseRupeesToPaise(text: String): Long? {
-    if (text.isBlank()) return null
-    val parts = text.split(".")
-    if (parts.size > 2) return null
-    val rupees = parts[0].ifBlank { "0" }.toLongOrNull() ?: return null
-    val paisePart = parts.getOrNull(1).orEmpty()
-    if (paisePart.length > 2) return null
-    val paise = paisePart.padEnd(2, '0').ifBlank { "0" }.toLongOrNull() ?: return null
-    return rupees * 100L + paise
 }

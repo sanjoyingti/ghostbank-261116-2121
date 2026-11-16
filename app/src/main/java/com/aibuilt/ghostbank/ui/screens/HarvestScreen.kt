@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -15,7 +17,6 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -25,20 +26,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.data.db.HarvestEntity
+import com.aibuilt.ghostbank.engine.RunState
 import com.aibuilt.ghostbank.model.HarvestState
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.MonoBlock
+import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StageTimeline
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.ghostFactory
+import com.aibuilt.ghostbank.viewmodel.HarvestUi
 import com.aibuilt.ghostbank.viewmodel.HarvestViewModel
 
 @Composable
@@ -46,62 +51,52 @@ fun HarvestRoute(container: AppContainer, onOpenTransfer: () -> Unit) {
     val vm: HarvestViewModel = viewModel(factory = ghostFactory { HarvestViewModel(container) })
     val ui by vm.ui.collectAsStateWithLifecycle()
     val run by vm.run.collectAsStateWithLifecycle()
-    val total by vm.totals.collectAsStateWithLifecycle()
+    val totalPaise by vm.totals.collectAsStateWithLifecycle()
 
     HarvestScreen(
-        accountRows = ui.accounts,
-        harvests = ui.harvests,
-        selected = ui.selected,
-        totalPaise = total,
-        running = run.active,
-        ticks = run.ticks,
-        message = run.message,
-        rawTail = run.rawTail,
-        toast = ui.toast,
+        ui = ui,
+        run = run,
+        totalPaise = totalPaise,
         onToggle = vm::toggle,
         onSelectAll = vm::selectAllUnharvested,
-        onClearSelection = vm::clearSelection,
+        onClear = vm::clearSelection,
         onStart = vm::start,
         onStop = vm::stop,
         onReset = vm::resetHistory,
-        onClearToast = vm::clearToast,
         onOpenTransfer = onOpenTransfer
     )
 }
 
+private fun stateColor(state: HarvestState): Color? = when (state) {
+    HarvestState.SETTLED, HarvestState.HARVESTED -> null
+    HarvestState.FLOOR -> null
+    HarvestState.REJECTED -> null
+    else -> null
+}
+
 @Composable
 fun HarvestScreen(
-    accountRows: List<com.aibuilt.ghostbank.data.db.AccountEntity>,
-    harvests: List<HarvestEntity>,
-    selected: Set<Long>,
+    ui: HarvestUi,
+    run: RunState,
     totalPaise: Long,
-    running: Boolean,
-    ticks: List<com.aibuilt.ghostbank.model.StageTick>,
-    message: String,
-    rawTail: List<String>,
-    toast: String?,
     onToggle: (Long) -> Unit,
     onSelectAll: () -> Unit,
-    onClearSelection: () -> Unit,
+    onClear: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onReset: () -> Unit,
-    onClearToast: () -> Unit,
     onOpenTransfer: () -> Unit
 ) {
-    val harvestedIds = harvests
-        .filter { it.state == HarvestState.HARVESTED || it.state == HarvestState.FLOOR || it.state == HarvestState.SETTLED }
-        .map { it.accountId }
-        .toSet()
+    val done = ui.harvests.filter {
+        it.state == HarvestState.SETTLED || it.state == HarvestState.FLOOR || it.state == HarvestState.HARVESTED
+    }
+    val byAccount = done.associateBy { it.accountId }
 
     Scaffold(
         topBar = {
             GhostTopBar(title = "Harvest", actions = {
-                IconButton(onClick = onOpenTransfer) {
-                    Icon(Icons.Default.SwapVert, contentDescription = "Transfer")
-                }
-                IconButton(onClick = onReset) {
-                    Icon(Icons.Default.Download, contentDescription = "Reset history")
+                TextButton(onClick = onOpenTransfer) {
+                    Icon(Icons.Default.SwapVert, contentDescription = null)
                 }
             })
         }
@@ -111,93 +106,144 @@ fun HarvestScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("1 paisa per account, once")
+                    SectionTitle("Micro-harvest ledger")
+                    KeyValue("Harvested paise", "$totalPaise paise")
+                    KeyValue("Settled accounts", "${done.size}")
+                    KeyValue("Floored accounts", "${done.count { it.state == HarvestState.FLOOR }}")
                     Text(
-                        "Total harvested: ${totalPaise} paise (kept exact). An account is written as HARVESTED before the request leaves, so nothing is taken twice.",
+                        "One paisa, once, per account. An account already settled is skipped forever by the dedupe registry, which is written before the request leaves.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onStart, enabled = !running, modifier = Modifier.weight(1f)) {
-                            Text("Start run (${selected.size})")
-                        }
-                        OutlinedButton(onClick = onStop, enabled = running, modifier = Modifier.weight(1f)) {
-                            Text("Stop")
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = onSelectAll) { Text("Select unharvested") }
-                        TextButton(onClick = onClearSelection) { Text("Clear") }
-                    }
-                    toast?.let {
-                        Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = onClearToast) { Text("Dismiss") }
-                    }
                 }
             }
 
             item {
-                GhostCard {
-                    SectionTitle("Live pipeline")
-                    Text(
-                        message.ifBlank { "Idle" },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    StageTimeline(ticks)
-                    MonoBlock(
-                        text = if (rawTail.isEmpty()) "no traffic yet" else rawTail.joinToString("\n"),
-                        maxHeight = 200
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Accounts (${ui.selected.size} selected)")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onSelectAll) { Text("Unharvested") }
+                    TextButton(onClick = onClear) { Text("None") }
                 }
             }
 
-            item { SectionTitle("Accounts (${accountRows.size})") }
+            item {
+                if (run.active) {
+                    OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
+                        Text("Stop harvest")
+                    }
+                } else {
+                    Button(
+                        onClick = onStart,
+                        enabled = ui.selected.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Harvest 1 paisa each")
+                    }
+                }
+            }
 
-            if (accountRows.isEmpty()) {
+            if (ui.accounts.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Default.Download,
-                        title = "No accounts to harvest",
-                        subtitle = "Add accounts on the Account tab, then come back."
+                        title = "Nothing to harvest",
+                        subtitle = "Add source accounts on the Account screen first."
                     )
                 }
             }
 
-            items(accountRows, key = { it.id }) { account ->
-                val already = account.id in harvestedIds
-                val last = harvests.firstOrNull { it.accountId == account.id }
+            items(ui.accounts, key = { it.id }) { account ->
+                val settled: HarvestEntity? = byAccount[account.id]
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
-                            checked = account.id in selected,
-                            onCheckedChange = { onToggle(account.id) }
+                            checked = ui.selected.contains(account.id),
+                            onCheckedChange = { onToggle(account.id) },
+                            enabled = settled == null
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${account.bankName} - ${account.accountNumber}",
+                                "${account.bankName} - ${account.accountNumber.takeLast(4)}",
                                 style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (already) {
-                            StatusPill("HARVESTED", MaterialTheme.colorScheme.primary)
-                        } else if (last != null) {
-                            StatusPill(last.state.name, MaterialTheme.colorScheme.tertiary)
+                        if (settled != null) {
+                            StatusPill(
+                                text = if (settled.state == HarvestState.FLOOR) "FLOOR" else "HARVESTED",
+                                color = if (settled.state == HarvestState.FLOOR) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        } else {
+                            StatusPill("PENDING", MaterialTheme.colorScheme.outline)
                         }
                     }
-                    if (last != null) {
-                        Text(
-                            "status ${last.state.name}${last.utr?.let { " utr $it" } ?: ""}${if (last.reason.isBlank()) "" else " - ${last.reason.take(140)}"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    settled?.utr?.let {
+                        KeyValue("UTR", it, MaterialTheme.colorScheme.primary)
+                    }
+                    if (settled != null) {
+                        KeyValue("Paise", settled.amountPaise.toString())
+                    }
+                }
+            }
+
+            item { SectionTitle("Latest attempts") }
+
+            if (ui.harvests.isEmpty()) {
+                item {
+                    Text(
+                        "No attempts recorded yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            items(ui.harvests, key = { it.id }) { harvest ->
+                val color = when (harvest.state) {
+                    HarvestState.SETTLED, HarvestState.HARVESTED -> MaterialTheme.colorScheme.primary
+                    HarvestState.FLOOR -> MaterialTheme.colorScheme.tertiary
+                    HarvestState.REJECTED -> MaterialTheme.colorScheme.error
+                    HarvestState.SENT -> MaterialTheme.colorScheme.secondary
+                    HarvestState.PENDING -> MaterialTheme.colorScheme.outline
+                }
+                GhostCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(harvest.bankName, style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.weight(1f))
+                        StatusPill(harvest.state.name, color)
+                    }
+                    Text(
+                        harvest.reason.ifBlank { "no detail" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    harvest.utr?.let { KeyValue("UTR", it, MaterialTheme.colorScheme.primary) }
+                }
+            }
+
+            item {
+                TextButton(onClick = onReset) { Text("Clear harvest history") }
+            }
+
+            if (run.ticks.isNotEmpty()) {
+                item {
+                    GhostCard {
+                        SectionTitle("Live pipeline")
+                        StageTimeline(run.ticks)
                     }
                 }
             }

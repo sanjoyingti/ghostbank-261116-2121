@@ -5,14 +5,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,7 +39,6 @@ import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
-import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.LedgerViewModel
 import kotlinx.coroutines.launch
@@ -57,11 +59,8 @@ fun LedgerRoute(container: AppContainer) {
         creditedPaise = credited,
         onExport = {
             scope.launch {
-                val intent = vm.export(context)
-                if (intent != null) {
-                    val chooser = Intent.createChooser(intent, "Export ledger")
-                    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(chooser)
+                vm.export(context)?.let { intent ->
+                    context.startActivity(Intent.createChooser(intent, "Export ledger"))
                 }
             }
         },
@@ -77,14 +76,15 @@ fun LedgerScreen(
     onClear: () -> Unit
 ) {
     val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.US)
+
     Scaffold(
         topBar = {
             GhostTopBar(title = "Ledger", actions = {
-                IconButton(onClick = onExport) {
-                    Icon(Icons.Default.Share, contentDescription = "Export CSV")
+                IconButton(onClick = onExport, enabled = rows.isNotEmpty()) {
+                    Icon(Icons.Default.Share, contentDescription = "Export")
                 }
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear ledger")
+                IconButton(onClick = onClear, enabled = rows.isNotEmpty()) {
+                    Icon(Icons.Default.Delete, contentDescription = "Clear")
                 }
             })
         }
@@ -99,11 +99,11 @@ fun LedgerScreen(
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Booked credits")
-                    KeyValue("Total credited", paiseLabel(creditedPaise))
-                    KeyValue("Rows", rows.size.toString())
+                    SectionTitle("Exact paise")
+                    KeyValue("Credited", "$creditedPaise paise")
+                    KeyValue("Rows", "${rows.size}")
                     Text(
-                        "Debit and credit rows are written side by side only after a settlement reference exists.",
+                        "Kept in whole paise, never rounded. A FLOOR row means that bank refused sub-rupee and the leg settled at 100 paise.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -114,40 +114,43 @@ fun LedgerScreen(
                 item {
                     EmptyState(
                         icon = Icons.Default.ReceiptLong,
-                        title = "Nothing booked yet",
-                        subtitle = "A run books here only once the rail returns a final status."
+                        title = "Ledger empty",
+                        subtitle = "Books appear only when a debit and the credit both confirm and a UTR is issued."
                     )
                 }
             }
 
             items(rows, key = { it.id }) { row ->
+                val isCredit = row.direction == LedgerDirection.CREDIT
                 GhostCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "${row.direction.name} ${paiseLabel(row.amountPaise)}",
+                                row.bankName,
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                "${row.bankName} - ${fmt.format(Date(row.bookedAt))}",
+                                fmt.format(Date(row.bookedAt)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         StatusPill(
-                            row.direction.name,
-                            if (row.direction == LedgerDirection.CREDIT) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.secondary
-                            }
+                            text = if (isCredit) "CREDIT" else "DEBIT",
+                            color = if (isCredit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                         )
                     }
+                    KeyValue("Paise", row.amountPaise.toString())
+                    row.utr?.let {
+                        KeyValue("UTR", it, MaterialTheme.colorScheme.primary)
+                    }
                     Text(
-                        "utr ${row.utr ?: "none"} - ${row.note}",
+                        row.note,
                         style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.fillMaxWidth())
                 }
             }
         }

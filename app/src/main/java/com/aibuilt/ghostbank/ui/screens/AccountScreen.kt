@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -227,25 +230,61 @@ fun AccountScreen(
 
             items(accounts, key = { it.id }) { account ->
                 GhostCard {
+                    Column {
+                        Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            account.bankName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            account.accountNumber,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            account.ifsc,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "${account.bankName} - ${account.accountNumber} - ${account.ifsc}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (account.isDestination) {
-                            StatusPill("destination", MaterialTheme.colorScheme.primary)
-                        } else {
-                            IconButton(onClick = { onSetDestination(account.id) }) {
-                                Icon(Icons.Default.StarBorder, contentDescription = "Make destination")
+                        StatusPill(
+                            text = if (account.isDestination) "destination" else "source",
+                            color = if (account.isDestination) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
                             }
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { onSetDestination(account.id) }) {
+                            Icon(
+                                imageVector = if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Mark destination",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                         IconButton(onClick = { onDelete(account.id) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
+                    }
+                }
+            }
+
+            item {
+                Row {
+                    OutlinedButton(onClick = onOpenBanks, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.AccountBalance, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Bank picker")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = onOpenTransfer, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.SwapVert, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Transfer")
                     }
                 }
             }
