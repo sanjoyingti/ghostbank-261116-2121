@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,10 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.model.LeakFinding
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
 import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.ghostFactory
@@ -39,8 +39,7 @@ fun LeakCheckRoute(container: AppContainer, onBack: () -> Unit) {
     LeakCheckScreen(
         running = leak.running,
         findings = leak.findings,
-        score = leak.report?.score,
-        onRun = vm::runLeakCheck,
+        onRun = { vm.runLeakCheck() },
         onBack = onBack
     )
 }
@@ -49,8 +48,7 @@ fun LeakCheckRoute(container: AppContainer, onBack: () -> Unit) {
 @Composable
 fun LeakCheckScreen(
     running: Boolean,
-    findings: List<LeakFinding>,
-    score: Int?,
+    findings: List<com.aibuilt.ghostbank.model.LeakFinding>,
     onRun: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -60,35 +58,35 @@ fun LeakCheckScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 GhostCard {
-                    SectionTitle("What the far end can see")
+                    SectionTitle("Before you run anything")
                     Text(
-                        "Runs a real IP echo and a TLS fingerprint probe through the configured exit. Green = hidden, amber = physically visible or unavailable.",
+                        "This hits real IP-echo and TLS-fingerprint endpoints through the configured exit and shows what a bank would actually see.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Button(onClick = onRun, enabled = !running, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (running) "Probing..." else "Run leak check")
+                        androidx.compose.material3.Icon(Icons.Default.Public, contentDescription = null)
+                        Text("  Run leak check")
                     }
                     if (running) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.padding(6.dp))
-                            Text("  Working through the probes", style = MaterialTheme.typography.bodyMedium)
+                            CircularProgressIndicator()
+                            Text("  Probing the exit...", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
             }
 
-            score?.let {
+            if (findings.isEmpty() && !running) {
                 item {
                     GhostCard {
-                        KeyValue("Stealth score", "$it / 100")
                         Text(
-                            "Score reasons are listed on the Stealth screen.",
-                            style = MaterialTheme.typography.bodySmall,
+                            "No result yet. Green means hidden, amber means physics stopped it.",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -97,30 +95,22 @@ fun LeakCheckScreen(
 
             items(findings, key = { it.label }) { finding ->
                 GhostCard {
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(finding.label, style = MaterialTheme.typography.titleMedium)
                             Text(finding.value, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                finding.note,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                         StatusPill(
-                            if (finding.hidden) "hidden" else "visible",
+                            if (finding.hidden) "HIDDEN" else "EXPOSED",
                             if (finding.hidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
                         )
                     }
+                    Text(
+                        finding.note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-
-            item {
-                Text(
-                    "If every finding is amber and no IP came back, no exit answered: the request never left the phone.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

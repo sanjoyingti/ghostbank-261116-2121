@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.data.db.AccountEntity
 import com.aibuilt.ghostbank.data.settings.GhostSettings
+import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
 import com.aibuilt.ghostbank.ui.components.KeyValue
@@ -215,65 +216,77 @@ fun AccountScreen(
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SectionTitle("Registry (${accounts.size})", modifier = Modifier.weight(1f))
-                    TextButton(onClick = onOpenBanks) { Text("Bank list") }
+                    TextButton(onClick = onOpenBanks) { Text("Pick a bank") }
                 }
             }
 
             if (accounts.isEmpty()) {
                 item {
+                    EmptyState(
+                        icon = Icons.Default.AccountBalance,
+                        title = "No accounts saved",
+                        subtitle = "Each saved account is fingerprinted once and may only be harvested once"
+                    )
+                }
+            } else {
+                items(accounts, key = { it.id }) { account ->
+                    AccountRow(
+                        account = account,
+                        isDestination = destination?.id == account.id,
+                        onSetDestination = { onSetDestination(account.id) },
+                        onDelete = { onDelete(account.id) }
+                    )
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("The rule")
                     Text(
-                        "No accounts yet. Every account gets exactly one paisa, once.",
+                        "One paisa per account, once. The registry is written before a request leaves, so an account can never be harvested twice.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+        }
+    }
+}
 
-            items(accounts, key = { it.id }) { account ->
-                GhostCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "${account.accountNumber} - ${account.ifsc}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                account.bankName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (account.isDestination) {
-                                StatusPill("destination", MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        IconButton(onClick = { onSetDestination(account.id) }) {
-                            Icon(
-                                if (account.isDestination) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Set as destination",
-                                tint = if (account.isDestination) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { onDelete(account.id) }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
+@Composable
+private fun AccountRow(
+    account: AccountEntity,
+    isDestination: Boolean,
+    onSetDestination: () -> Unit,
+    onDelete: () -> Unit
+) {
+    GhostCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${account.accountNumber}  -  ${account.ifsc}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    account.bankName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-
-            item {
-                OutlinedButton(
-                    onClick = onOpenTransfer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open the transfer pipeline")
-                }
+            if (isDestination) {
+                StatusPill("destination", MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onSetDestination) {
+                Icon(
+                    if (isDestination) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Set as destination",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Remove account")
             }
         }
     }

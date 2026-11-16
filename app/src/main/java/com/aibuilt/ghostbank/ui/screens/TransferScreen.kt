@@ -9,12 +9,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.BankRegistry
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
@@ -43,33 +43,29 @@ fun TransferRoute(container: AppContainer, onBack: () -> Unit) {
     val vm: HarvestViewModel = viewModel(factory = ghostFactory { HarvestViewModel(container) })
     val ui by vm.ui.collectAsStateWithLifecycle()
     val run by vm.run.collectAsStateWithLifecycle()
+    val settings by vm.pool.collectAsStateWithLifecycle()
 
     TransferScreen(
-        ui = ui,
-        runActive = run.active,
-        onToggle = vm::toggle,
-        onSelectAll = vm::selectAllUnharvested,
-        onClear = vm::clearSelection,
-        onStart = vm::start,
-        onStop = vm::stop
+        vm = vm,
+        selected = ui.selected,
+        accounts = ui.accounts,
+        run = run,
+        exitConfigured = settings.exitConfigured,
+        onBack = onBack
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransferScreen(
-    ui: com.aibuilt.ghostbank.viewmodel.HarvestUi,
-    runActive: Boolean,
-    onToggle: (Long) -> Unit,
-    onSelectAll: () -> Unit,
-    onClear: () -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit
+    vm: HarvestViewModel,
+    selected: Set<Long>,
+    accounts: List<com.aibuilt.ghostbank.data.db.AccountEntity>,
+    run: com.aibuilt.ghostbank.engine.RunState,
+    exitConfigured: Boolean,
+    onBack: () -> Unit
 ) {
-    val destination = ui.accounts.firstOrNull { it.isDestination }
-    val run = com.aibuilt.ghostbank.model.TickViewHolder.current
-
-    Scaffold(topBar = { GhostTopBar(title = "Transfer", onBack = null) }) { padding ->
+    Scaffold(topBar = { GhostTopBar(title = "Transfer", onBack = onBack) }) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -79,42 +75,16 @@ fun TransferScreen(
         ) {
             item {
                 GhostCard {
-                    SectionTitle("Destination")
-                    if (destination == null) {
+                    SectionTitle("Rail")
+                    KeyValue("Route", "IMPS P2A")
+                    KeyValue("Amount", "1 paisa (floor ${paiseLabel(100)} if the rail refuses)")
+                    KeyValue("Credit leg", "only after the debit confirms")
+                    if (!exitConfigured) {
                         Text(
-                            "No destination marked. Open the Account tab and star one account.",
+                            "No exit configured - the kill-switch will hold every request.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.tertiary
                         )
-                    } else {
-                        KeyValue("Account", destination.accountNumber)
-                        KeyValue("IFSC", destination.ifsc)
-                        KeyValue("Bank", destination.bankName)
-                        StatusPill("credits land here", MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Amount")
-                    KeyValue("Per account", "1 paisa (${paiseLabel(1)})")
-                    KeyValue("Rail floor", "100 paise tagged FLOOR")
-                    Text(
-                        "The amount is fixed at one paisa with a hard cap, so it can never drift. If the rail rejects sub-rupee the leg is re-run at the floor and labelled FLOOR, never silently rounded.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onSelectAll, modifier = Modifier.weight(1f)) {
-                        Text("Select all")
-                    }
-                    OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
-                        Text("Clear")
                     }
                 }
             }
@@ -122,90 +92,89 @@ fun TransferScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = onStart,
-                        enabled = !runActive && ui.selected.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Run pipeline (${ui.selected.size})") }
-                    OutlinedButton(onClick = onStop, enabled = runActive, modifier = Modifier.weight(1f)) {
-                        Text("Stop")
-                    }
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Stages")
-                    if (ui.accounts.isEmpty()) {
-                        EmptyState(
-                            Icons.Default.SwapVert,
-                            "Nothing to transfer",
-                            "Register an account first."
-                        )
-                    } else {
-                        Text(
-                            "Pick the source accounts below, then run. A debit leg that fails stops the run for that account: the credit leg is never faked and the full response body stays in the trace log.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            item {
-                GhostCard {
-                    SectionTitle("Sources")
-                    ui.accounts.forEach { account ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = ui.selected.contains(account.id),
-                                onCheckedChange = { onToggle(account.id) },
-                                enabled = !runActive
-                            )
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(account.holderLabel, style = MaterialTheme.typography.bodyLarge)
-                                val cap = BankRegistry.byCode(account.bankCode)?.perTxCapPaise ?: 0L
-                                Text(
-                                    "${account.bankCode} - cap ${paiseLabel(cap)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        onClick = {
+                            if (selected.isEmpty() && accounts.isNotEmpty()) {
+                                vm.toggle(accounts.first().id)
                             }
-                        }
+                            vm.start()
+                        },
+                        enabled = !run.active && accounts.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        androidx.compose.material3.Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Text("  Run pipeline")
+                    }
+                    OutlinedButton(
+                        onClick = { vm.stop() },
+                        enabled = run.active,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        androidx.compose.material3.Icon(Icons.Default.Stop, contentDescription = null)
+                        Text("  Stop")
                     }
                 }
             }
 
-            item { SectionTitle("Caps per bank") }
-            items(BankRegistry.banks) { bank ->
+            item {
                 GhostCard {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Text(bank.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text(
-                            paiseLabel(bank.perTxCapPaise),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    SectionTitle("Pipeline")
+                    KeyValue("Run", run.runId.ifBlank { "not started" })
+                    KeyValue("Stealth score", run.stealthScore.toString())
+                    StageTimeline(run.ticks)
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Choose the source account")
+                    if (accounts.isEmpty()) {
+                        EmptyState(
+                            icon = Icons.Default.PlayArrow,
+                            title = "No accounts yet",
+                            subtitle = "Add an account on the Accounts screen first"
                         )
                     }
                 }
+            }
+
+            items(accounts, key = { it.id }) { account ->
+                GhostCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = account.id in selected,
+                            onClick = { vm.toggle(account.id) }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(account.holderLabel, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${account.accountNumber}  -  ${account.ifsc}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                account.bankName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        StatusPill(if (account.id in selected) "selected" else "idle")
+                    }
+                }
+            }
+
+            item {
+                GhostCard {
+                    SectionTitle("Raw log (last lines)")
+                    Text(run.message, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            item {
+                MonoBlock(
+                    text = if (run.rawTail.isEmpty()) "nothing yet" else run.rawTail.joinToString("\n"),
+                    maxHeight = 260
+                )
             }
         }
-    }
-
-    // Live pipeline rendered on top of the list by the shared holder.
-    run?.let { }
-}
-
-/** Small holder so the transfer screen can show live ticks without a second view model. */
-object TickViewHolderAccess
-
-internal object TickViewHolder {
-    val current: com.aibuilt.ghostbank.engine.RunState? = null
-}
-
-@Composable
-fun PipelineBlock(ticks: List<com.aibuilt.ghostbank.model.StageTick>, raw: List<String>) {
-    GhostCard {
-        StageTimeline(ticks)
-        if (raw.isNotEmpty()) MonoBlock(raw.joinToString("\n"))
     }
 }

@@ -10,30 +10,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
-import com.aibuilt.ghostbank.data.db.LedgerEntity
 import com.aibuilt.ghostbank.model.LedgerDirection
 import com.aibuilt.ghostbank.ui.components.EmptyState
 import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
+import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
@@ -53,7 +53,8 @@ fun LedgerRoute(container: AppContainer) {
 
     LedgerScreen(
         rows = rows,
-        creditedPaise = credited,
+        credited = credited,
+        onClear = { vm.clear() },
         onExport = {
             scope.launch {
                 val intent = vm.export(context)
@@ -61,26 +62,28 @@ fun LedgerRoute(container: AppContainer) {
                     context.startActivity(Intent.createChooser(intent, "Export ledger"))
                 }
             }
-        },
-        onClear = vm::clear
+        }
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LedgerScreen(
-    rows: List<LedgerEntity>,
-    creditedPaise: Long,
-    onExport: () -> Unit,
-    onClear: () -> Unit
+    rows: List<com.aibuilt.ghostbank.data.db.LedgerEntity>,
+    credited: Long,
+    onClear: () -> Unit,
+    onExport: () -> Unit
 ) {
-    val fmt = SimpleDateFormat("dd MMM HH:mm:ss", Locale.US)
+    val fmt = SimpleDateFormat("dd MMM yyyy HH:mm:ss", Locale.getDefault())
 
     Scaffold(
         topBar = {
             GhostTopBar(title = "Ledger", actions = {
                 IconButton(onClick = onExport, enabled = rows.isNotEmpty()) {
                     Icon(Icons.Default.Share, contentDescription = "Export CSV")
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Default.Delete, contentDescription = "Clear ledger")
                 }
             })
         }
@@ -94,24 +97,17 @@ fun LedgerScreen(
         ) {
             item {
                 GhostCard {
-                    KeyValue("Credited to destination", "$creditedPaise paise (${paiseLabel(creditedPaise)})")
-                    KeyValue("Rows", rows.size.toString())
+                    SectionTitle("Credited to destination")
                     Text(
-                        "The balance is held in whole paise so 25 harvests read as 25 paise and nothing is rounded away.",
+                        "${paiseLabel(credited)}  (${credited} paise)",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Paise are kept exact - nothing is rounded away.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onExport, enabled = rows.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Export CSV")
-                    }
-                    OutlinedButton(onClick = onClear, enabled = rows.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Clear")
-                    }
                 }
             }
 
@@ -119,39 +115,39 @@ fun LedgerScreen(
                 item {
                     EmptyState(
                         icon = Icons.Default.ReceiptLong,
-                        title = "Ledger is empty",
-                        subtitle = "Debit and credit rows appear here only after a run books a UTR."
+                        title = "No ledger rows",
+                        subtitle = "Rows appear only after a run books a UTR"
                     )
                 }
-            }
-
-            items(rows, key = { it.id }) { row ->
-                GhostCard {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(row.bankName, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                fmt.format(Date(row.bookedAt)),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(row.note, style = MaterialTheme.typography.bodySmall)
-                            row.utr?.let { Text("UTR $it", style = MaterialTheme.typography.bodySmall) }
-                        }
-                        Column {
+            } else {
+                items(rows, key = { it.id }) { row ->
+                    GhostCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${row.direction.name}  ${paiseLabel(row.amountPaise)}",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    row.bankName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    fmt.format(Date(row.bookedAt)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(row.note, style = MaterialTheme.typography.bodySmall)
+                            }
                             StatusPill(
-                                row.direction.name,
-                                if (row.direction == LedgerDirection.CREDIT) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.secondary
-                                }
+                                if (row.direction == LedgerDirection.CREDIT) "credit" else "debit",
+                                if (row.direction == LedgerDirection.CREDIT) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.secondary
                             )
-                            Text(
-                                "${row.amountPaise} p",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                        }
+                        row.utr?.let {
+                            Text("UTR $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }

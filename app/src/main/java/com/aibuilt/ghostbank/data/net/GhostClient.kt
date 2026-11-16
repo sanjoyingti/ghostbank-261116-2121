@@ -14,8 +14,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -120,7 +122,7 @@ class GhostClient(
             if (!k.equals("X-Pad", true)) builder = builder.addHeader(k, v)
         }
         val request = if (method == "POST" && body != null) {
-            builder.post(okhttp3.RequestBody.create(null, body)).build()
+            builder.post(body.toRequestBody(JSON_MEDIA)).build()
         } else {
             builder.get().build()
         }
@@ -131,6 +133,7 @@ class GhostClient(
         } catch (e: Exception) {
             Log.w(TAG, "call failed $url: ${e.message}")
             safeLog(runId, stage, method, url, url, -1, 0, System.currentTimeMillis() - started, headers, e.toString(), cfg)
+            client.dispatcher.executorService.shutdown()
             return@withContext null
         }
         val elapsed = System.currentTimeMillis() - started
@@ -198,6 +201,7 @@ class GhostClient(
 
     companion object {
         private const val TAG = "GhostClient"
+        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     }
 }
 

@@ -8,42 +8,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aibuilt.ghostbank.data.AppContainer
 import com.aibuilt.ghostbank.model.Bank
-import com.aibuilt.ghostbank.ui.components.GhostCard
 import com.aibuilt.ghostbank.ui.components.GhostTopBar
-import com.aibuilt.ghostbank.ui.components.KeyValue
-import com.aibuilt.ghostbank.ui.components.SectionTitle
 import com.aibuilt.ghostbank.ui.components.StatusPill
 import com.aibuilt.ghostbank.ui.components.paiseLabel
 import com.aibuilt.ghostbank.ui.ghostFactory
 import com.aibuilt.ghostbank.viewmodel.BankViewModel
 
 @Composable
-fun BankPickerRoute(container: AppContainer, onBack: () -> Unit, onPick: (String) -> Unit) {
+fun BankPickerRoute(
+    container: AppContainer,
+    onBack: () -> Unit,
+    onPick: (String) -> Unit
+) {
     val vm: BankViewModel = viewModel(factory = ghostFactory { BankViewModel() })
     val query by vm.query.collectAsStateWithLifecycle()
-
     BankPickerScreen(
         query = query,
-        onQuery = vm::setQuery,
         banks = vm.filtered(query),
-        totalBanks = vm.banks.size,
+        onQuery = vm::setQuery,
         onBack = onBack,
         onPick = onPick
     )
@@ -53,13 +54,12 @@ fun BankPickerRoute(container: AppContainer, onBack: () -> Unit, onPick: (String
 @Composable
 fun BankPickerScreen(
     query: String,
-    onQuery: (String) -> Unit,
     banks: List<Bank>,
-    totalBanks: Int,
+    onQuery: (String) -> Unit,
     onBack: () -> Unit,
     onPick: (String) -> Unit
 ) {
-    Scaffold(topBar = { GhostTopBar(title = "Banks ($totalBanks)", onBack = onBack) }) { padding ->
+    Scaffold(topBar = { GhostTopBar(title = "Banks (${banks.size})", onBack = onBack) }) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -71,56 +71,39 @@ fun BankPickerScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQuery,
-                    label = { Text("Search bank or IFSC prefix") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    label = { Text("Search name or code") },
+                    leadingIcon = { androidx.compose.material3.Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            item {
-                Text(
-                    "Picking a bank fills its IFSC prefix into the account form.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (banks.isEmpty()) {
-                item {
-                    GhostCard {
-                        Text("No bank matches \"$query\".", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
             items(banks, key = { it.code }) { bank ->
-                GhostCard {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(bank.name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "IFSC prefix ${bank.code}0",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onPick(bank.code) }
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(bank.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            StatusPill(bank.code)
                         }
-                        StatusPill(bank.rail.label, MaterialTheme.colorScheme.secondary)
-                    }
-                    KeyValue("Per-transfer cap", paiseLabel(bank.perTxCapPaise))
-                    KeyValue("Site", bank.homepage)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StatusPill("${bank.verifiedEndpoints.size} verified", MaterialTheme.colorScheme.primary)
-                        StatusPill("${bank.probeOnlyEndpoints.size} probe-only", MaterialTheme.colorScheme.tertiary)
-                    }
-                    bank.endpoints.take(3).forEach { endpoint ->
                         Text(
-                            "${if (endpoint.state.name == "VERIFIED") "verified" else "probe ${endpoint.probeStatus}"} - ${endpoint.urlTemplate}",
+                            "IFSC prefix ${bank.code}0  -  cap ${paiseLabel(bank.perTxCapPaise)}  -  ${bank.rail.label}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "${bank.verifiedEndpoints.size} verified endpoint(s), ${bank.probeOnlyEndpoints.size} probe-only, homepage ${bank.homepage}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = { onPick(bank.code) }) { Text("Use ${bank.code}0 prefix") }
                 }
             }
-            item { SectionTitle("Per-bank caps are enforced, never exceeded") }
         }
     }
 }

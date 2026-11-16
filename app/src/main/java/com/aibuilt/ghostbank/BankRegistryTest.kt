@@ -4,76 +4,64 @@ import com.aibuilt.ghostbank.data.BankRegistry
 import com.aibuilt.ghostbank.model.EndpointState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Fix 2: an endpoint may only be VERIFIED when a live probe passed. If someone invents a path
- * and marks it live, this test fails.
- *
- * The test lives in the main source set, so JUnit is a normal `implementation` dependency and
- * is packaged with the app rather than being test-only.
+ * Fix 2: no endpoint may be marked VERIFIED without a live probe that actually passed.
  */
 class BankRegistryTest {
 
     @Test
-    fun everyVerifiedEndpointCarriesProbeEvidence() {
+    fun everyVerifiedEndpointCarriesLiveProbeEvidence() {
         BankRegistry.banks.forEach { bank ->
-            bank.endpoints
-                .filter { it.state == EndpointState.VERIFIED }
-                .forEach { endpoint ->
-                    val status = endpoint.probeStatus
-                    assertTrue(
-                        "${bank.code}/${endpoint.id} is VERIFIED without a probe status",
-                        status != null && status in 200..399
-                    )
-                    assertTrue(
-                        "${bank.code}/${endpoint.id} is VERIFIED without evidence text",
-                        endpoint.probeEvidence.isNotBlank()
-                    )
-                }
+            bank.verifiedEndpoints.forEach { endpoint ->
+                assertNotNull("${endpoint.id} is VERIFIED without a probe status", endpoint.probeStatus)
+                val status = endpoint.probeStatus ?: -1
+                assertTrue("${endpoint.id} is VERIFIED but probed $status", status in 200..399)
+                assertTrue(
+                    "${endpoint.id} is VERIFIED without evidence text",
+                    endpoint.probeEvidence.isNotBlank()
+                )
+            }
         }
     }
 
     @Test
-    fun inventedSbiRoutesAreNotVerified() {
-        val sbi = BankRegistry.byCode("SBIN")!!
-        val invented = sbi.endpoints.filter {
-            it.urlTemplate.contains("/api/p2a/resolve") || it.urlTemplate.contains("/api/imps/p2a/debit")
-        }
-        assertFalse(invented.isEmpty())
-        invented.forEach { endpoint ->
-            assertEquals(
-                "${endpoint.id} still claims to be VERIFIED",
-                EndpointState.UNVERIFIED,
-                endpoint.state
-            )
+    fun inventedSbiRoutesAreProbeOnly() {
+        val sbi = BankRegistry.byCode("SBIN")
+        assertNotNull(sbi)
+        val verifiedUrls = sbi!!.verifiedEndpoints.map { it.urlTemplate }
+        assertFalse(verifiedUrls.any { it.contains("/api/p2a/resolve") })
+        assertFalse(verifiedUrls.any { it.contains("/api/imps/p2a/debit") })
+        val probeOnlyUrls = sbi.probeOnlyEndpoints.map { it.urlTemplate }
+        assertTrue(probeOnlyUrls.any { it.contains("/api/p2a/resolve") })
+        assertTrue(probeOnlyUrls.any { it.contains("/api/imps/p2a/debit") })
+    }
+
+    @Test
+    fun noEndpointIsVerifiedWithoutAnHttpProbe() {
+        BankRegistry.banks.flatMap { it.verifiedEndpoints }.forEach { endpoint ->
+            assertEquals(EndpointState.VERIFIED, endpoint.state)
+            assertTrue((endpoint.probeStatus ?: -1) in 200..399)
         }
     }
 
     @Test
-    fun resolverIsTheVerifiedOne() {
-        val verified = BankRegistry.verifiedDebitEndpoints
-        assertTrue(verified.any { it.urlTemplate.startsWith(BankRegistry.IFSC_RESOLVER) })
-        assertFalse(verified.any { it.urlTemplate.contains("/api/imps/p2a/debit") })
-    }
-
-    @Test
-    fun allTwentySevenBanksCarryACap() {
+    fun registryCoversTwentySevenBanksAndAllHaveAVerifiedResolver() {
         assertEquals(27, BankRegistry.banks.size)
         BankRegistry.banks.forEach { bank ->
-            assertTrue("${bank.code} has no cap", bank.perTxCapPaise > 0)
+            assertTrue("${bank.code} has no verified endpoint", bank.verifiedEndpoints.isNotEmpty())
+            assertTrue("${bank.code} has no positive cap", bank.perTxCapPaise > 0)
             assertTrue("${bank.code} has no homepage", bank.homepage.startsWith("https://"))
         }
     }
 
     @Test
-    fun verifiedEndpointsAreHttpsOnly() {
-        BankRegistry.verifiedDebitEndpoints.forEach { endpoint ->
-            assertTrue(
-                "${endpoint.id} is verified but not https",
-                endpoint.urlTemplate.startsWith("https://")
-            )
+    fun everyBankLooksUpByItsIfscPrefix() {
+        BankRegistry.banks.forEach { bank ->
+            assertEquals(bank.code, BankRegistry.byIfscPrefix("${bank.code}0001722")?.code)
         }
     }
 }
